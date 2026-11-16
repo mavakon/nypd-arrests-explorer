@@ -545,9 +545,14 @@
           .attr("x", (_, j) => (j % 10) * u + 1).attr("y", (_, j) => Math.floor(j / 10) * u + 1)
           .attr("width", u - 2).attr("height", u - 2)
           .style("fill", (c) => cols[c])
-          .classed("dim", (c) => effHi() != null && c !== effHi())
-          .on("click", (e, c) => toggleXf({ kind: "cohort", dim, key: c }))
-          .on("pointermove", (e, c) => {
+          .classed("dim", (c) => effHi() != null && c !== effHi());
+        // hit area = whole u×u grid cell (not just the glyph's painted pixels): delegate to the svg, pick the cell under the pointer
+        const cellAt = (e) => { const [x, y] = d3.pointer(e, svg.node()); const j = Math.min(9, Math.floor(y / u)) * 10 + Math.min(9, Math.floor(x / u)); return cells[j]; };
+        svg.style("cursor", cells.length ? "pointer" : null)
+          .on("click", (e) => { const c = cellAt(e); if (c != null) toggleXf({ kind: "cohort", dim, key: c }); })
+          .on("pointermove", (e) => {
+            const c = cellAt(e);
+            if (c == null) { highlight(null); hideTip(); return; }
             highlight(c);
             showTip(e, tipLines(`${fmt.pct(w.counts[c] / w.n)}`, [`${labels[c]} · ${SEV_NAMES[w.sev]}`, `${fmt.int(w.counts[c])} of ${fmt.int(w.n)} arrests · ${w.cells[c]} figures`, selCohort() === c ? "Click to clear the cross-filter" : "Click to cross-filter the map, detail and calendar"], cols[c]));
           })
