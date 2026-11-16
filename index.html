@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NYC Arrests Explorer</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- shared SVG defs: no-data hatch + person glyph -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+        <rect width="6" height="6" class="hatch-bg"/>
+        <line x1="0" y1="0" x2="0" y2="6" class="hatch-line"/>
+      </pattern>
+      <symbol id="person" viewBox="0 0 16 16">
+        <circle cx="8" cy="3.6" r="2.9"/>
+        <path d="M2.6 15.5v-4.2c0-2.6 2.1-4.5 4.6-4.5h1.6c2.5 0 4.6 1.9 4.6 4.5v4.2z"/>
+      </symbol>
+    </defs>
+  </svg>
+
+  <header class="top">
+    <div class="title">
+      <h1>NYC Arrests Explorer</h1>
+      <p class="sub">NYPD arrests 2006–2025 — who is arrested, for what, where and when</p>
+    </div>
+    <div class="controls" role="group" aria-label="Global filters">
+      <div class="ctl year-ctl">
+        <button id="play" class="btn" type="button" aria-label="Play years">▶</button>
+        <label for="year" class="lbl">Year</label>
+        <input id="year" type="range" min="2006" max="2025" step="1" value="2025">
+        <output id="yearOut" for="year">2025</output>
+      </div>
+      <div class="ctl">
+        <label for="offense" class="lbl">Offense</label>
+        <select id="offense"></select>
+      </div>
+      <div class="ctl">
+        <span class="lbl">Precinct</span>
+        <span id="selChip" class="chip-static">Citywide — click a precinct</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="grid">
+    <section class="panel" id="viewA" aria-labelledby="hA">
+      <div class="phead">
+        <div>
+          <h2 id="hA">Where — arrests by precinct</h2>
+          <p class="psub" id="subA"></p>
+        </div>
+        <div class="chips">
+          <div class="seg" role="group" aria-label="Map layer">
+            <button class="chip" data-layer="choro" aria-pressed="true">Choropleth</button>
+            <button class="chip" data-layer="heat" aria-pressed="false" title="Density heat">Heat</button>
+            <button class="chip" data-layer="donut" aria-pressed="false" title="Donut clusters (severity mix)">Donuts</button>
+          </div>
+          <div class="seg" role="group" aria-label="Measure">
+            <button class="chip" data-mode="count" aria-pressed="true">Count</button>
+            <button class="chip" data-mode="rate" aria-pressed="false" title="Arrests per 10,000 residents">Per 10k</button>
+          </div>
+        </div>
+      </div>
+      <div class="map-wrap">
+        <div id="map" aria-label="Map of NYPD precincts"></div>
+        <div id="mapLegend" class="map-legend"></div>
+        <div id="mapNote" class="map-note" hidden></div>
+      </div>
+    </section>
+
+    <section class="panel" id="viewB" aria-labelledby="hB">
+      <div class="phead">
+        <div>
+          <h2 id="hB">What — <span id="bTitle">New York City</span></h2>
+          <p class="psub" id="subB"></p>
+        </div>
+      </div>
+      <div class="b-body">
+        <div class="b-left">
+          <h3>Top offenses <span class="muted" id="bBarsNote"></span></h3>
+          <svg id="bars" class="chart"></svg>
+          <div id="drill" class="drill" hidden></div>
+        </div>
+        <div class="b-right">
+          <h3>Over time <span class="muted">— click or drag to set the year</span></h3>
+          <div id="lineLegend" class="legend"></div>
+          <svg id="line" class="chart"></svg>
+          <h3>Severity mix <span class="muted" id="sevNote"></span></h3>
+          <svg id="sevbar" class="chart"></svg>
+          <div id="sevLegend" class="legend"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="viewC" aria-labelledby="hC">
+      <div class="phead">
+        <div>
+          <h2 id="hC">Who — share of arrests by cohort within each charge severity</h2>
+          <p class="psub" id="subC"></p>
+        </div>
+        <div class="chips">
+          <div class="seg" role="group" aria-label="Cohort">
+            <button class="chip" data-dim="sex" aria-pressed="true">Sex</button>
+            <button class="chip" data-dim="race" aria-pressed="false">Race</button>
+            <button class="chip" data-dim="age" aria-pressed="false">Age</button>
+          </div>
+          <div class="seg" role="group" aria-label="Waffle period">
+            <button class="chip" data-wper="year" aria-pressed="true">This year</button>
+            <button class="chip" data-wper="all" aria-pressed="false">All years</button>
+          </div>
+        </div>
+      </div>
+      <div id="dqBanner" class="banner" role="status" hidden></div>
+      <div id="waffles" class="waffles"></div>
+      <div id="waffleLegend" class="legend"></div>
+      <p class="note">These are arrests — a record of police activity — not a measure of crimes committed by any group. 1 figure = 1% of arrests at that severity level.</p>
+    </section>
+
+    <section class="panel" id="viewD" aria-labelledby="hD">
+      <div class="phead">
+        <div>
+          <h2 id="hD">When — mean arrests per day by weekday × month</h2>
+          <p class="psub" id="subD"></p>
+        </div>
+        <div class="chips">
+          <div class="seg" role="group" aria-label="Calendar measure">
+            <button class="chip" data-cmode="abs" aria-pressed="true">Abs</button>
+            <button class="chip" data-cmode="pct" aria-pressed="false">%</button>
+          </div>
+          <div class="seg" role="group" aria-label="Calendar period">
+            <button class="chip" data-cper="year" aria-pressed="true">This year</button>
+            <button class="chip" data-cper="all" aria-pressed="false">All years</button>
+          </div>
+        </div>
+      </div>
+      <svg id="cal" class="chart"></svg>
+      <div id="calLegend" class="legend"></div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <p>PV251 final project · Lada Spektorovska (595755), Maksym Konshyn (595740), Nikita Dakhno (599440)</p>
+    <details>
+      <summary>About the data</summary>
+      <ul id="about">
+        <li>Arrests: NYPD Arrests Data (Historic), NYC Open Data — <a id="srcArrests" href="#">source</a>. Precinct boundaries: <a id="srcPrecincts" href="#">NYC Open Data</a>. Population: <span id="srcPop"></span>.</li>
+        <li>Arrests ≠ crimes: each record is an arrest made by police, not a confirmed offence, and counts reflect enforcement priorities as much as behaviour.</li>
+        <li>Arrest locations are recorded at mid-block / intersection level, not the exact address.</li>
+        <li>4 arrests recorded in precincts without a boundary polygon are excluded from all views.</li>
+        <li>The density heat layer excludes 7,116 records without valid coordinates.</li>
+        <li>Per-10k rates use 2020 census population. Precinct 22 (Central Park) has 129 residents and is excluded from rates, ranking and outliers. Two precincts were created during the period: 121 (Jul 2013, from parts of 120 and 122) and 116 (2024-12-19, from parts of 105 and 113). They are shown as no data before creation and as a partial year in their first year (excluded from ranking and outliers then). Per-10k rates of 105 and 113 use their pre-split 2020 census population (199,218 and 135,221) for 2006–2024 and today's (post-split) population from 2025. Per-10k rates of 120/122 before 2014 are inflated, because their population is counted within today's (post-2013) boundaries.</li>
+        <li>Sex and age are missing for 52.8% of 2025 records; "All years" in Sex / Age mode uses 2006–2024 only.</li>
+      </ul>
+    </details>
+  </footer>
+
+  <div id="tooltip" class="tooltip" role="tooltip" hidden></div>
+  <div id="loading" class="loading" role="status"><div>Loading arrest data (~3.3 MB)…</div></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/map.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
