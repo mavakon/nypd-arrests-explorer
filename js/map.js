@@ -66,12 +66,13 @@
     }
     const boroMaxCache = new Map();
     function boroMax(o) {
-      if (!boroMaxCache.has(o)) {
+      const key = M.cubeId() + "|" + o; // fixed per offense + cross-filter
+      if (!boroMaxCache.has(key)) {
         let mx = 1;
         for (let y = 0; y < M.Y; y++) for (const b of M.boroughs) mx = Math.max(mx, d3.sum(M.boroSevMix(b, y, o)));
-        boroMaxCache.set(o, mx);
+        boroMaxCache.set(key, mx);
       }
-      return boroMaxCache.get(o);
+      return boroMaxCache.get(key);
     }
 
     function donutIcon(mix, r, label) {
@@ -136,7 +137,7 @@
       else if (S.mode === "rate" && p === M.p22) head = `${fmt.int(M.value(p, y, S.offense))} arrests · per 10k n/a (park)`;
       else {
         const v = M.metric(p, y, S.offense, S.mode);
-        head = S.mode === "rate" ? `${fmt.dec(v)} per 10k residents` : `${fmt.int(v)} arrests`;
+        head = S.mode === "rate" ? `${fmt.dec(v)} per 10k residents${ctx.xfLabel() ? " (all residents)" : ""}` : `${fmt.int(v)} arrests`;
         const r = M.rank(p, y, S.offense, S.mode);
         if (r) lines.push(`rank ${r.rank} / ${r.of}`);
         if (!isNaN(cur.vals[p]) && cur.vals[p] > cur.thr) lines.push("statistical outlier (> Q3 + 1.5·IQR)");
@@ -147,7 +148,7 @@
       return el("div", {}, [
         el("div", {}, [el("b", { text: head })]),
         el("div", { text: `Precinct ${d.id} · ${d.boro} · ${yr}` }),
-        el("div", { text: ctx.offenseLabel() }),
+        el("div", { text: ctx.offenseLabel() + (ctx.xfLabel() ? " · " + ctx.xfLabel() : "") }),
         ...lines.map((t) => el("div", { text: t })),
       ]);
     }
@@ -185,6 +186,7 @@
         lastLayer = lyr;
       }
       ctx.noteEl.hidden = true;
+      ctx.noteEl.textContent = "";
       if (lyr === "heat") updateHeat();
       if (lyr === "donut") drawDonuts();
       syncLabels();
@@ -194,10 +196,10 @@
     function updateHeat() {
       const yr = M.meta.years[S.year], o = S.offense;
       const key = o != null && M.topIdx.includes(o) ? String(o) : "all";
-      if (o != null && key === "all") {
-        ctx.noteEl.textContent = "Heat available for the 15 largest offenses — showing all offenses.";
-        ctx.noteEl.hidden = false;
-      }
+      const notes = [];
+      if (o != null && key === "all") notes.push("Heat available for the 15 largest offenses — showing all offenses.");
+      if (ctx.xfLabel()) notes.push(`Heat is not cross-filtered — shows all arrests, not only ${ctx.xfLabel()}.`);
+      if (notes.length) { ctx.noteEl.textContent = notes.join(" "); ctx.noteEl.hidden = false; }
       getHeat(yr).then((h) => {
         if (M.meta.years[S.year] !== yr || S.layer !== "heat") return; // stale
         const c = h.cells[key] || [], pts = [], ns = [];
@@ -228,8 +230,9 @@
       const row = (kids) => box.appendChild(el("div", { class: "row" }, kids));
       if (S.layer === "choro") {
         const max = color.domain()[1];
-        const unit = S.mode === "rate" ? "Arrests per 10k residents" : "Arrests (count)";
-        box.appendChild(el("div", { text: `${unit} · scale fixed across 2006–2025` }));
+        const xf = ctx.xfLabel();
+        const unit = S.mode === "rate" ? `Arrests per 10k residents${xf ? " (all residents)" : ""}` : "Arrests (count)";
+        box.appendChild(el("div", { text: `${unit}${xf ? " · " + xf : ""} · scale fixed across 2006–2025` }));
         const stops = d3.range(0, 1.0001, 0.1).map((t) => `${color(t * t * max)} ${t * 100}%`).join(",");
         box.appendChild(el("div", { class: "gradbar", style: `background:linear-gradient(90deg,${stops})` }));
         const tk = [0, 0.25, 0.5, 0.75, 1].map((t) => el("span", { text: fmt.compact(t * t * max) }));

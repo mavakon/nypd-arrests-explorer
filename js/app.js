@@ -79,7 +79,8 @@
 
   function init(M, geo) {
     const meta = M.meta, Y = M.Y;
-    const S = { year: Y - 2, offense: null, precinct: null, layer: "choro", mode: "count", dim: "sex", wper: "year", cmode: "abs", cper: "year" };
+    const S = { year: Y - 2, offense: null, precinct: null, layer: "choro", mode: "count", dim: "sex", wper: "year", cmode: "abs", cper: "year",
+      xf: null }; // cross-filter: null | {kind:"cohort", dim, key} | {kind:"dow", d}
     const offenseLabel = (o = S.offense) => (o == null ? "All offenses" : meta.offenses[o].label);
 
     // sources in footer
@@ -111,7 +112,11 @@
     for (const [attr, key] of [["layer", "layer"], ["mode", "mode"], ["dim", "dim"], ["wper", "wper"], ["cmode", "cmode"], ["cper", "cper"]]) {
       document.querySelectorAll(`[data-${attr}]`).forEach((b) => b.addEventListener("click", () => set({ [key]: b.dataset[attr] })));
     }
-    document.addEventListener("keydown", (e) => { if (e.key === "Escape" && S.precinct != null) set({ precinct: null }); });
+    // Esc clears the most recent layer first: the cross-filter, then the precinct
+    document.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape") return;
+      if (S.xf) set({ xf: null }); else if (S.precinct != null) set({ precinct: null });
+    });
 
     // ---------- state ----------
     let pending = false; // coalesce several set() calls in one task into one render
@@ -120,9 +125,69 @@
       if (!pending) { pending = true; queueMicrotask(() => { pending = false; render(); }); }
     }
     const toggle = (p) => set({ precinct: S.precinct === p ? null : p });
+    const sameXf = (a, b) => !!a && !!b && a.kind === b.kind && (a.kind === "dow" ? a.d === b.d : a.dim === b.dim && a.key === b.key);
+    const toggleXf = (xf) => set({ xf: sameXf(S.xf, xf) ? null : xf }); // one at a time: a new one replaces the old
+    const DIM_NAME = { sex: "Sex", race: "Race", age: "Age" };
+    const xfLabel = (xf = S.xf) => !xf ? null : xf.kind === "dow" ? `Weekday: ${DAYS[xf.d]}`
+      : `${DIM_NAME[xf.dim]}: ${xf.dim === "race" && xf.key === 5 ? "Other" : M.cohorts[xf.dim].labels[xf.key]}`;
+
+    // ---------- lazy cross-filter slices (data/x) ----------
+    // Each file is fetched once, indexed once into typed arrays, cached; a resolved fetch re-renders.
+    const files = new Map();
+    function need(url, transform) {
+      let e = files.get(url);
+      if (!e) {
+        e = { status: "pending" };
+        files.set(url, e);
+        getJSON(url).then((v) => { e.value = transform(v); e.status = "ok"; })
+          .catch((err) => { console.warn(err); e.status = "error"; e.err = err; })
+          .finally(() => set({}));
+      }
+      return e;
+    }
+    const all = (entries) => entries.find((e) => e.status === "error") || entries.find((e) => e.status === "pending")
+      || { status: "ok", values: entries.map((e) => e.value) };
+    const cohortRaw = (dim, i) => need(`data/x/${dim}_${i}.json`, (v) => ({
+      cube: M.indexCube([v.rows], `${dim}:${i}`), calOff: v.cal_offense, calPre: v.cal_precinct }));
+    const folded = new Map();
+    function cohortSlice(dim, key) { // folded cohort (race "Other" = race_5 + race_6)
+      const st = all(M.rawCohorts(dim, key).map((i) => cohortRaw(dim, i)));
+      if (st.status !== "ok") return st;
+      const k = dim + ":" + key;
+      if (!folded.has(k)) folded.set(k, { status: "ok", value: {
+        cube: M.sumCubes(st.values.map((v) => v.cube), k),
+        calOff: M.sumArrays(st.values.map((v) => v.calOff)), calPre: M.sumArrays(st.values.map((v) => v.calPre)) } });
+      return folded.get(k);
+    }
+    const dowSlice = (d) => need(`data/x/dow_${d}.json`, (v) => ({ cube: M.indexCube([v.rows], "dow:" + d), dims: M.indexDemo(v) }));
+    const calPrecinct = (p) => need(`data/x/cal_p${meta.precincts[p].id}.json`, (v) => M.decodeSparse(v.cells));
+    const calOffenseAll = () => need("data/x/cal_offense_all.json", (v) => Int32Array.from(v.cal));
+    const xfSlice = () => (S.xf.kind === "dow" ? dowSlice(S.xf.d) : cohortSlice(S.xf.dim, S.xf.key));
+
+    // per-view status pill + dimmed previous render; "Loading…" only after 300 ms so fast loads never flash
+    const busyTimers = {};
+    function status(view, st, what) {
+      const panel = $("#" + view), pill = panel.querySelector(".vstatus");
+      clearTimeout(busyTimers[view]);
+      if (st.status === "pending") {
+        busyTimers[view] = setTimeout(() => {
+          panel.classList.add("busy");
+          pill.classList.remove("err"); pill.textContent = `Loading ${what}…`; pill.hidden = false;
+        }, 300);
+        return false;
+      }
+      panel.classList.remove("busy");
+      if (st.status === "error") {
+        pill.classList.add("err"); pill.hidden = false;
+        pill.textContent = `Could not load ${what} — showing the previous view. Check the connection and reload.`;
+        return false;
+      }
+      pill.hidden = true;
+      return true;
+    }
 
     const mapView = MapView(M, geo, S, {
-      tok, fmt, el, toggle, offenseLabel, reduced,
+      tok, fmt, el, toggle, offenseLabel, reduced, xfLabel: () => xfLabel(),
       legendEl: $("#mapLegend"), noteEl: $("#mapNote"),
     });
 
@@ -142,14 +207,31 @@
         b.addEventListener("click", () => set({ precinct: null }));
         chip.appendChild(b);
       }
+      const xc = $("#xfChip");
+      xc.replaceChildren();
+      if (!S.xf) { xc.className = "chip-static"; xc.textContent = "none — click a waffle cohort or a weekday"; }
+      else {
+        xc.className = "";
+        const b = el("button", { class: "chip-x", type: "button", "aria-label": `Clear cross-filter ${xfLabel()}`, title: `${xfLabel()} — click or Esc to clear`, text: `${xfLabel()}  ×` });
+        b.addEventListener("click", () => set({ xf: null }));
+        xc.appendChild(b);
+      }
     }
 
     function render() {
       syncControls();
       const yr = meta.years[S.year];
-      $("#subA").textContent = `${offenseLabel()} · ${yr} · ${S.layer === "choro" ? (S.mode === "rate" ? "arrests per 10k residents" : "arrest count") : S.layer === "heat" ? "point density" : "severity mix"} · click a precinct to filter the other views`;
-      mapView.update();
-      renderB();
+      // A + B run on "the active cube": the full data, or the cross-filter slice once it is loaded
+      const xs = S.xf ? xfSlice() : { status: "ok" };
+      const xfWhat = S.xf ? `${xfLabel()} slice` : "";
+      const okA = status("viewA", xs, xfWhat), okB = status("viewB", xs, xfWhat);
+      if (okA && okB) {
+        M.useCube(S.xf ? xs.value.cube : null);
+        const xf = xfLabel();
+        $("#subA").textContent = `${xf ? xf + " · " : ""}${offenseLabel()} · ${yr} · ${S.layer === "choro" ? (S.mode === "rate" ? `arrests per 10k residents${xf ? " (all residents)" : ""}` : "arrest count") : S.layer === "heat" ? "point density (not cross-filtered)" : "severity mix"} · click a precinct to filter the other views`;
+        mapView.update();
+        renderB();
+      }
       renderC();
       renderD();
       // headers never wrap; full text of ellipsized titles/subtitles on hover
@@ -179,11 +261,11 @@
           const r = M.rank(p, y, o, S.mode);
           if (r) parts.push(`rank ${r.rank} / ${r.of}${S.mode === "rate" ? " per capita" : ""}`);
           if (M.partial(p, y)) parts.push("partial year");
-          parts.push(p === M.p22 ? "per 10k n/a (park)" : `${fmt.dec((n / M.pop(p, y)) * 1e4)} per 10k residents`);
-        } else parts.push(`${fmt.dec((n / M.cityPop) * 1e4)} per 10k residents`);
+          parts.push(p === M.p22 ? "per 10k n/a (park)" : `${fmt.dec((n / M.pop(p, y)) * 1e4)} per 10k residents${S.xf ? " (all residents)" : ""}`);
+        } else parts.push(`${fmt.dec((n / M.cityPop) * 1e4)} per 10k residents${S.xf ? " (all residents)" : ""}`);
         head = parts.join(" · ");
       }
-      $("#subB").textContent = head;
+      $("#subB").textContent = (xfLabel() ? xfLabel() + " · " : "") + head;
       renderBars(p, y, o);
       renderDrill(p, y, o);
       renderLine(p, o);
@@ -274,6 +356,7 @@
         const tot = d3.sum(rows, (r) => r[1]), mx = top.length ? top[0][1] : 1;
         box.dataset.k = `${p}|${y}|${o}`;
         box.replaceChildren(el("h3", { text: `Detailed offenses (PD description) — ${offenseLabel(o)}, ${where}, ${meta.years[y]}` }));
+        if (S.xf) box.appendChild(el("div", { class: "muted", text: `Not cross-filtered — all arrests, not only ${xfLabel()}.` }));
         if (!rows.length) { box.appendChild(el("div", { class: "muted", text: "No arrests for this offense here in this year." })); return; }
         const line = (label, n) => {
           const r = el("div", { class: "dr", tabindex: 0 }, [
@@ -342,7 +425,7 @@
       const item = (color, text) => lg.appendChild(el("span", { class: "item" }, [el("span", { class: "sw line", style: `background:${color}` }), el("span", { text })]));
       if (p != null) item(tok("--ink"), `Precinct ${meta.precincts[p].id}`);
       item(p == null ? tok("--ink") : tok("--neutral-mark"), "New York City");
-      lg.appendChild(el("span", { class: "item muted", text: offenseLabel(o) }));
+      lg.appendChild(el("span", { class: "item muted", text: offenseLabel(o) + (S.xf ? " · " + xfLabel() : "") }));
 
       // interaction: hover readout + click/drag sets year
       const yearAt = (e) => Math.max(0, Math.min(Y - 1, Math.round(x.invert(d3.pointer(e, svg.node())[0]))));
@@ -407,19 +490,37 @@
     // =====================================================================
     // View C — waffles
     // =====================================================================
-    let hiCohort = null;
+    let hiCohort = null; // hover highlight (temporary); the clicked cohort (S.xf) is the persistent one
+    const selCohort = () => (S.xf && S.xf.kind === "cohort" && S.xf.dim === S.dim ? S.xf.key : null);
     function renderC() {
-      const p = S.precinct, dim = S.dim, yr = meta.years[S.year];
+      const p = S.precinct, dim = S.dim, yr = meta.years[S.year], o = S.offense;
       const demoIncomplete = dim !== "race";
       const years = S.wper === "year" ? [S.year] : d3.range(demoIncomplete ? Y - 1 : Y);
       const per = S.wper === "year" ? String(yr) : demoIncomplete ? "2006–2024 (2025 excluded: sex/age incomplete)" : "2006–2025";
       const where = p == null ? "New York City" : `Precinct ${meta.precincts[p].id}`;
-      $("#subC").textContent = `${where} · ${per} · all offenses (does not follow the offense filter)`;
-      const banner = $("#dqBanner");
-      banner.hidden = !(demoIncomplete && S.wper === "year" && yr === 2025);
-      banner.textContent = "⚠ 2025 demographics incomplete — sex/age missing for 52.8% of records; the Unknown share is shown as recorded.";
 
-      const ws = M.waffle(dim, p, years);
+      // source: weekday slice (ignores offense) | one cohort cube per raw cohort (follows offense) | demo.json
+      let src, st = { status: "ok" }, what = "", scope;
+      if (S.xf && S.xf.kind === "dow") {
+        st = dowSlice(S.xf.d); what = `${xfLabel()} slice`;
+        if (st.status === "ok") src = { dims: st.value.dims };
+        scope = `only ${xfLabel()} · all offenses${o != null ? " (offense filter not applied under a weekday filter)" : ""}`;
+      } else if (o != null) {
+        st = all(M.cohorts[dim].map.map((_, i) => cohortRaw(dim, i))); what = `${DIM_NAME[dim].toLowerCase()} × offense data`;
+        if (st.status === "ok") src = { cubes: st.values.map((v) => v.cube), o };
+        scope = offenseLabel(o);
+      } else scope = "all offenses";
+      if (selCohort() != null) scope += ` · cross-filter ${xfLabel()} (highlighted; full distribution kept)`;
+      if (S.xf && S.xf.kind === "cohort" && S.xf.dim !== dim) scope += ` · ${xfLabel()} filter not applied here (no ${dim} × ${S.xf.dim} data)`;
+      if (!status("viewC", st, what)) return;
+      $("#subC").textContent = `${where} · ${per} · ${scope}`;
+      const banner = $("#dqBanner");
+      const xfDemo = S.xf && S.xf.kind === "cohort" && S.xf.dim !== "race";
+      banner.hidden = !((demoIncomplete && S.wper === "year" && yr === 2025) || (xfDemo && (yr === 2025 || S.cper === "all")));
+      banner.textContent = "⚠ 2025 demographics incomplete — sex/age missing for 52.8% of records; the Unknown share is shown as recorded"
+        + (xfDemo ? `, and the ${xfLabel()} filter only covers records where ${S.xf.dim} was recorded.` : ".");
+
+      const ws = M.waffle(dim, p, years, src);
       const labels = M.cohorts[dim].labels;
       const cols = COHORT_TOK[dim].map(tok);
       const box = $("#waffles");
@@ -444,10 +545,11 @@
           .attr("x", (_, j) => (j % 10) * u + 1).attr("y", (_, j) => Math.floor(j / 10) * u + 1)
           .attr("width", u - 2).attr("height", u - 2)
           .style("fill", (c) => cols[c])
-          .classed("dim", (c) => hiCohort != null && c !== hiCohort)
+          .classed("dim", (c) => effHi() != null && c !== effHi())
+          .on("click", (e, c) => toggleXf({ kind: "cohort", dim, key: c }))
           .on("pointermove", (e, c) => {
             highlight(c);
-            showTip(e, tipLines(`${fmt.pct(w.counts[c] / w.n)}`, [`${labels[c]} · ${SEV_NAMES[w.sev]}`, `${fmt.int(w.counts[c])} of ${fmt.int(w.n)} arrests · ${w.cells[c]} figures`], cols[c]));
+            showTip(e, tipLines(`${fmt.pct(w.counts[c] / w.n)}`, [`${labels[c]} · ${SEV_NAMES[w.sev]}`, `${fmt.int(w.counts[c])} of ${fmt.int(w.n)} arrests · ${w.cells[c]} figures`, selCohort() === c ? "Click to clear the cross-filter" : "Click to cross-filter the map, detail and calendar"], cols[c]));
           })
           .on("pointerleave", () => { highlight(null); hideTip(); });
       });
@@ -455,51 +557,68 @@
       const lg = $("#waffleLegend");
       lg.replaceChildren(el("span", { class: "item muted", text: "Felony · Misdemeanor · Violation (%)" }));
       labels.forEach((l, i) => {
-        const it = el("span", { class: "item", tabindex: 0 }, [
+        const it = el("span", { class: "item", tabindex: 0, role: "button", "aria-pressed": String(selCohort() === i) }, [
           el("span", { class: "sw", style: `background:${cols[i]}` }),
           el("span", { text: l }),
           el("span", { class: "pctv", text: ws.map((w) => (w.n ? w.cells[i] : "–")).join(" · ") }),
         ]);
         it.dataset.c = i;
-        if (hiCohort != null && hiCohort !== i) it.classList.add("dim");
+        if (selCohort() === i) it.classList.add("sel");
+        if (effHi() != null && effHi() !== i) it.classList.add("dim");
+        const pick = () => toggleXf({ kind: "cohort", dim, key: i });
+        it.addEventListener("click", pick);
+        it.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } });
         const on = () => highlight(i), off = () => highlight(null);
         it.addEventListener("pointerenter", on); it.addEventListener("focus", on);
         it.addEventListener("pointerleave", off); it.addEventListener("blur", off);
         lg.appendChild(it);
       });
     }
+    const effHi = () => (hiCohort != null ? hiCohort : selCohort());
     function highlight(c) {
-      if (c === hiCohort) return;
       hiCohort = c;
-      d3.selectAll("#waffles use").classed("dim", (k) => c != null && k !== c);
-      document.querySelectorAll("#waffleLegend .item[data-c]").forEach((it) => it.classList.toggle("dim", c != null && +it.dataset.c !== c));
+      const h = effHi();
+      d3.selectAll("#waffles use").classed("dim", (k) => h != null && k !== h);
+      document.querySelectorAll("#waffleLegend .item[data-c]").forEach((it) => it.classList.toggle("dim", h != null && +it.dataset.c !== h));
     }
 
     // =====================================================================
     // View D — calendar heatmap
     // =====================================================================
+    // -> {st, arr, base, scope}: which calendar array (and its base index) the current state needs
     function calSlice() {
-      if (S.precinct != null) return { slice: { kind: "precinct", p: S.precinct }, scope: `Precinct ${meta.precincts[S.precinct].id} · all offenses${S.offense != null ? " (no offense split per precinct)" : ""}` };
-      if (S.offense == null) return { slice: { kind: "offense", k: 0 }, scope: "Citywide · all offenses" };
-      const k = M.topIdx.indexOf(S.offense);
-      if (k < 0) return { slice: { kind: "offense", k: 0 }, scope: `Citywide · all offenses (no calendar slice for “${offenseLabel()}” — showing all)` };
-      return { slice: { kind: "offense", k: k + 1 }, scope: `Citywide · ${offenseLabel()}` };
+      const p = S.precinct, o = S.offense, ok = (arr, base, scope, st = { status: "ok" }) => ({ st, arr, base, scope });
+      const P = p == null ? "Citywide" : `Precinct ${meta.precincts[p].id}`;
+      if (S.xf && S.xf.kind === "cohort") {
+        const st = cohortSlice(S.xf.dim, S.xf.key), v = st.value, xf = `only ${xfLabel()}`;
+        if (p != null) return ok(v && v.calPre, p, `${P} · ${xf} · all offenses${o != null ? " (offense not applied: no precinct × offense × cohort calendar)" : ""}`, st);
+        const k = o == null ? -1 : M.topIdx.indexOf(o);
+        if (o != null && k < 0) return ok(v && v.calOff, 0, `${P} · ${xf} · all offenses (cohort calendars exist for the 15 largest offenses only)`, st);
+        return ok(v && v.calOff, k + 1, `${P} · ${xf} · ${offenseLabel()}`, st);
+      }
+      if (p != null && o != null) { const st = calPrecinct(p); return ok(st.value, o, `${P} · ${offenseLabel()}`, st); }
+      if (p != null) return ok(M.cal.precinct, p, `${P} · all offenses`);
+      if (o != null) { const st = calOffenseAll(); return ok(st.value, o, `${P} · ${offenseLabel()}`, st); }
+      return ok(M.cal.offense, 0, `${P} · all offenses`);
     }
 
     function renderD() {
-      const { slice, scope } = calSlice();
+      const { st, arr, base, scope } = calSlice();
+      if (!status("viewD", st, "calendar data")) return;
+      const p = S.precinct;
       // a precinct created mid-period: "all years" = its full years only, so days before it existed don't dilute the mean
-      const allYears = d3.range(Y).filter((y) => slice.kind !== "precinct" || (M.hasData(slice.p, y) && !M.partial(slice.p, y)));
+      const allYears = d3.range(Y).filter((y) => p == null || (M.hasData(p, y) && !M.partial(p, y)));
       const years = S.cper === "year" ? [S.year] : allYears;
       const span = allYears.length ? `${meta.years[allYears[0]]}–${meta.years[allYears[allYears.length - 1]]}` : "–";
-      const c = M.calendar(slice, years);
+      const c = M.calendar(arr, base, years);
+      const selD = S.xf && S.xf.kind === "dow" ? S.xf.d : null;
       const pct = S.cmode === "pct";
       const part = S.precinct != null && S.cper === "year" && M.partial(S.precinct, S.year) ? ` (partial year — precinct created ${M.created(S.precinct)})` : "";
-      $("#subD").textContent = `${scope} · ${S.cper === "year" ? meta.years[S.year] + part : span} · ${pct ? "% deviation from the period's mean arrests per day" : "mean arrests per day"}`;
+      $("#subD").textContent = `${selD != null ? `cross-filter ${xfLabel()} (selected row) · ` : ""}${scope} · ${S.cper === "year" ? meta.years[S.year] + part : span} · ${pct ? "% deviation from the period's mean arrests per day" : "mean arrests per day"}`;
 
       // fixed domain across years for this slice (comparable while animating)
       let lo = Infinity, hi = 0, dev = 0;
-      const grids = S.cper === "year" ? allYears.map((y) => M.calendar(slice, [y])) : [c];
+      const grids = S.cper === "year" ? allYears.map((y) => M.calendar(arr, base, [y])) : [c];
       for (const g of grids) {
         if (!g.total) continue;
         for (const r of g.mean) for (const v of r) { lo = Math.min(lo, v); hi = Math.max(hi, v); dev = Math.max(dev, Math.abs(v / g.overall - 1)); }
@@ -523,14 +642,19 @@
         .attr("x", W / 2).attr("y", H / 2).attr("text-anchor", "middle").text("No data for this precinct in this period");
       svg.selectAll("rect.cell").data(c.total ? cells : []).join("rect").attr("class", "cell")
         .attr("x", (q) => x(q.m)).attr("y", (q) => yS(q.d)).attr("width", x.bandwidth()).attr("height", yS.bandwidth())
-        .attr("rx", 3).attr("tabindex", 0)
+        .attr("rx", 3).attr("tabindex", 0).attr("role", "button")
+        .attr("aria-label", (q) => `${DAYS[q.d]} in ${MONTHS[q.m]}: ${fmt.dec(c.mean[q.d][q.m])} arrests per day`)
         .style("fill", (q) => color(val(q.d, q.m)))
+        .classed("off", (q) => selD != null && q.d !== selD)
+        .on("click", (e, q) => toggleXf({ kind: "dow", d: q.d }))
+        .on("keydown", (e, q) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleXf({ kind: "dow", d: q.d }); } })
         .on("pointermove focus", (e, q) => {
           const mean = c.mean[q.d][q.m], dv = mean / c.overall - 1;
           showTip(e, tipLines(pct ? `${dv >= 0 ? "+" : ""}${d3.format(".1%")(dv)} vs mean` : `${fmt.dec(mean)} arrests / day`, [
             `${DAYS[q.d]} in ${MONTHS[q.m]} · ${S.cper === "year" ? meta.years[S.year] : span}`,
             pct ? `${fmt.dec(mean)} arrests / day (period mean ${fmt.dec(c.overall)})` : `${d3.format("+.1%")(dv)} vs period mean ${fmt.dec(c.overall)}`,
             `${fmt.int(c.cnt[q.d][q.m])} arrests over ${c.days[q.d][q.m]} ${DAYS[q.d]}s`,
+            selD === q.d ? "Click to clear the weekday cross-filter" : `Click to cross-filter by ${DAYS[q.d]}`,
           ]));
         })
         .on("pointerleave blur", hideTip);
@@ -538,7 +662,9 @@
       svg.selectAll("g.axis.x").data([0]).join("g").attr("class", "axis x").attr("transform", `translate(0,${m.t - 4})`)
         .call(d3.axisTop(x).tickFormat((i) => MONTHS[i]).tickSize(0)).call((g) => g.select(".domain").remove());
       svg.selectAll("g.axis.y").data([0]).join("g").attr("class", "axis y").attr("transform", `translate(${m.l - 4},0)`)
-        .call(d3.axisLeft(yS).tickFormat((i) => DAYS[i]).tickSize(0)).call((g) => g.select(".domain").remove());
+        .call(d3.axisLeft(yS).tickFormat((i) => DAYS[i]).tickSize(0)).call((g) => g.select(".domain").remove())
+        .call((g) => g.selectAll(".tick").classed("sel", (d) => d === selD)
+          .on("click", (e, d) => toggleXf({ kind: "dow", d })));
       // marginal means
       const mf = (v) => (pct ? d3.format("+.0%")(v / c.overall - 1) : fmt.dec(v));
       svg.selectAll("text.marg.r").data(c.total ? c.rowMean : []).join("text").attr("class", "marg r")

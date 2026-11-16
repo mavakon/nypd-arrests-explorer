@@ -258,6 +258,174 @@ def dump(obj, rel):
     return os.path.getsize(path)
 
 
+X_MAX = 1_500_000
+COHORT_COL = {"sex": "perp_sex", "race": "perp_race", "age": "age_group"}
+
+
+def build_xfilter(P, ids, oidx, topk, rix, sx, cube, demo, cal_off, cal_pct, nP, no_poly, check):
+    """Cross-filter slices under data/x/: one file per cohort value (sex/race/age) and per weekday.
+    Same normalisation and index conventions as cube.json / demo.json / calendar.json."""
+    cidx = {"sex": lambda r: sx[sex_label(r.get("perp_sex"))],
+            "race": lambda r: rix[race_label(r.get("perp_race"))],
+            "age": lambda r: AGES.index(age_label(r.get("age_group")))}
+    ncoh = {"sex": len(sx), "race": len(rix), "age": len(AGES)}
+    dsel = "date_extract_m(arrest_date) as m, date_extract_dow(arrest_date) as d"
+    dow = lambda r: (int(r["d"]) + 6) % 7  # SoQL 0=Sunday -> 0=Monday
+    rows = {dim: [Counter() for _ in range(ncoh[dim])] for dim in ncoh}
+    coff = {dim: [[0] * len(cal_off) for _ in range(ncoh[dim])] for dim in ncoh}
+    cpct = {dim: [[0] * len(cal_pct) for _ in range(ncoh[dim])] for dim in ncoh}
+    drows = [Counter() for _ in range(7)]
+    ddemo = [{"sex": Counter(), "race": Counter(), "age": Counter()} for _ in range(7)]
+    NO = len(oidx)
+    cio = lambda o, y, m, d: ((o * Y + y) * 12 + m) * 7 + d  # all-offense calendar index
+    cal_all = [0] * (NO * Y * 84)
+    calp = [Counter() for _ in range(nP)]
+    t0 = time.time()
+    for yi, yr in enumerate(YEARS):
+        w = year_where(yr)
+        for dim, col in COHORT_COL.items():
+            for r in soql(f"x-{dim}-rows-{yr}", f"arrest_precinct, ky_cd, law_cat_cd, {col}, count(*) as n",
+                          f"arrest_precinct, ky_cd, law_cat_cd, {col}", w):
+                p = num(r.get("arrest_precinct"))
+                if p in P:
+                    rows[dim][cidx[dim](r)][(P[p], yi, oidx[num(r.get("ky_cd"))], SEV.index(sev(r.get("law_cat_cd"))))] += int(r["n"])
+            for r in soql(f"x-{dim}-caloff-{yr}", f"{col}, {dsel}, ky_cd, count(*) as n", f"{col}, m, d, ky_cd", w):
+                arr, n, base = coff[dim][cidx[dim](r)], int(r["n"]), (yi * 12 + int(r["m"]) - 1) * 7 + dow(r)
+                arr[base] += n
+                k = topk.get(num(r.get("ky_cd")))
+                if k:
+                    arr[k * Y * 84 + base] += n
+            for r in soql(f"x-{dim}-calpct-{yr}", f"{col}, arrest_precinct, {dsel}, count(*) as n", f"{col}, arrest_precinct, m, d", w):
+                p = num(r.get("arrest_precinct"))
+                if p in P:
+                    cpct[dim][cidx[dim](r)][((P[p] * Y + yi) * 12 + int(r["m"]) - 1) * 7 + dow(r)] += int(r["n"])
+        for r in soql(f"x-dow-rows-{yr}", "arrest_precinct, ky_cd, law_cat_cd, date_extract_dow(arrest_date) as d, count(*) as n",
+                      "arrest_precinct, ky_cd, law_cat_cd, d", w):
+            p = num(r.get("arrest_precinct"))
+            if p in P:
+                drows[dow(r)][(P[p], yi, oidx[num(r.get("ky_cd"))], SEV.index(sev(r.get("law_cat_cd"))))] += int(r["n"])
+        for r in soql(f"x-dow-demo-{yr}", "arrest_precinct, perp_sex, perp_race, age_group, law_cat_cd, "
+                      "date_extract_dow(arrest_date) as d, count(*) as n",
+                      "arrest_precinct, perp_sex, perp_race, age_group, law_cat_cd, d", w):
+            p = num(r.get("arrest_precinct"))
+            if p in P:
+                key, n, dd = (P[p], yi), int(r["n"]), ddemo[dow(r)]
+                s = SEV.index(sev(r.get("law_cat_cd")))
+                for dim in ncoh:
+                    dd[dim][(*key, cidx[dim](r), s)] += n
+        # same URL as main()'s cal-off query -> served from cache
+        for r in soql(f"cal-off-{yr}", "date_extract_m(arrest_date) as m, date_extract_dow(arrest_date) as d, ky_cd, count(*) as n",
+                      "m, d, ky_cd", w):
+            cal_all[cio(oidx[num(r.get("ky_cd"))], yi, int(r["m"]) - 1, dow(r))] += int(r["n"])
+        for r in soql(f"x-calp-{yr}", f"arrest_precinct, ky_cd, {dsel}, count(*) as n", "arrest_precinct, ky_cd, m, d", w):
+            p = num(r.get("arrest_precinct"))
+            if p in P:
+                calp[P[p]][cio(oidx[num(r.get("ky_cd"))], yi, int(r["m"]) - 1, dow(r))] += int(r["n"])
+        print(f"  xfilter {yr} ({time.time() - t0:.0f}s)")
+
+    def sparse(arr):  # flat [index, n, index, n, ...] for non-zero entries
+        return [v for i, n in enumerate(arr) if n for v in (i, n)]
+
+    sizes, enc, ok = {}, {}, True
+    for dim in ncoh:
+        for i in range(ncoh[dim]):
+            name = f"{dim}_{i}.json"
+            body = {"rows": [[*k, n] for k, n in sorted(rows[dim][i].items())]}
+            # dense unless the file is over budget and sparse is actually smaller
+            size = dump({**body, "cal_offense": coff[dim][i], "cal_precinct": cpct[dim][i]}, f"x/{name}")
+            enc[name] = "dense"
+            if size > X_MAX:
+                sp = {**body, "cal_offense": sparse(coff[dim][i]), "cal_precinct": sparse(cpct[dim][i])}
+                if len(json.dumps(sp, separators=(",", ":"))) < size:
+                    size = dump(sp, f"x/{name}")
+                    enc[name] = "sparse"
+            sizes[name] = size
+    demo_sort = lambda c: [[*k, n] for k, n in sorted(c.items())]
+    for d in range(7):
+        name = f"dow_{d}.json"
+        sizes[name] = dump({"rows": demo_sort(drows[d]), **{dim: demo_sort(ddemo[d][dim]) for dim in ncoh}}, f"x/{name}")
+    for i, pid in enumerate(ids):
+        sizes[f"cal_p{pid}.json"] = dump({"cells": [v for k in sorted(calp[i]) for v in (k, calp[i][k])]}, f"x/cal_p{pid}.json")
+    sizes["cal_offense_all.json"] = dump({"cal": cal_all}, "x/cal_offense_all.json")
+    bigp = {k: v for k, v in sizes.items() if k.startswith("cal_p") and v > 400_000}
+    check("data/x/cal_p*.json <= 400 KB (target)", not bigp, f"over target: {bigp}" if bigp else
+          f"largest {max(v for k, v in sizes.items() if k.startswith('cal_p')):,} B")
+    big = {k: v for k, v in sizes.items() if v > X_MAX}
+    # reported, not fatal: the coordinator decides on encoding changes (see OVER lines in the size report)
+    check("data/x files <= 1.5 MB (budget, warning only)", not big, f"over budget: {big}" if big else f"largest {max(sizes.values()):,} B")
+
+    # ---- checks
+    for dim in ncoh:
+        ok &= check(f"x {dim} rows summed over cohorts == cube (per cell)", sum(rows[dim], Counter()) == cube, f"{len(cube):,} cells")
+        ok &= check(f"x {dim} cal_precinct summed == calendar.precinct",
+                    [sum(c) for c in zip(*cpct[dim])] == cal_pct, f"{sum(map(sum, cpct[dim])):,}")
+        ok &= check(f"x {dim} cal_offense summed == calendar.offense",
+                    [sum(c) for c in zip(*coff[dim])] == cal_off, f"{sum(sum(a[:Y * 84]) for a in coff[dim]):,}")
+    ok &= check("x dow rows summed over d == cube (per cell)", sum(drows, Counter()) == cube, f"{sum(sum(c.values()) for c in drows):,}")
+    demo_key = {"sex": lambda k: (k[0], k[1], sx[k[2]], k[3]), "race": lambda k: (k[0], k[1], rix[k[2]], k[3]), "age": lambda k: k}
+    for dim in ncoh:
+        want = Counter({demo_key[dim](k): n for k, n in demo[dim].items()})
+        ok &= check(f"x dow {dim} summed over d == demo.{dim} (per cell)", sum((dd[dim] for dd in ddemo), Counter()) == want,
+                    f"{len(want):,} cells")
+    # cal_p: per precinct, summed over offenses == calendar.precinct slice; summed over m,d == cube over severity
+    bad1, bad2 = [], []
+    cube_pyo = Counter()
+    for (p, y, o, sv), n in cube.items():
+        cube_pyo[(p, y, o)] += n
+    for i in range(nP):
+        dense = [0] * (Y * 84)
+        pyo = Counter()
+        for k, n in calp[i].items():
+            dense[k % (Y * 84)] += n
+            pyo[(i, k // 84 % Y, k // (Y * 84))] += n
+        if dense != cal_pct[i * Y * 84:(i + 1) * Y * 84]:
+            bad1.append(ids[i])
+        if pyo != Counter({k: n for k, n in cube_pyo.items() if k[0] == i}):
+            bad2.append(ids[i])
+    ok &= check("x cal_p summed over offenses == calendar.precinct (every precinct)", not bad1, f"bad {bad1}")
+    ok &= check("x cal_p summed over m,d == cube summed over severity per [p,y,o]", not bad2, f"bad {bad2}")
+    tops = all(cal_all[o * Y * 84:(o + 1) * Y * 84] == cal_off[k * Y * 84:(k + 1) * Y * 84] for ky, k in topk.items() for o in [oidx[ky]])
+    ok &= check("x cal_offense_all top-15 rows == calendar.offense k=1..15", tops, "")
+    k0 = [sum(cal_all[o * Y * 84 + j] for o in range(NO)) for j in range(Y * 84)]
+    ok &= check("x cal_offense_all summed over o == calendar.offense k=0", k0 == cal_off[:Y * 84], f"{sum(k0):,}")
+    # independent query: unmatched-precinct arrests per weekday
+    um = Counter()
+    if no_poly:
+        for r in soql("x-unmatched-dow", "date_extract_dow(arrest_date) as d, count(*) as n", "d",
+                      f"arrest_precinct in ({','.join(str(p) for p in no_poly if p is not None)})"
+                      + (" or arrest_precinct is null" if None in no_poly else "")):
+            um[dow(r)] += int(r["n"])
+    for d in range(7):
+        k0 = sum(cal_off[i] for i in range(d, Y * 84, 7))
+        got = sum(drows[d].values())
+        ok &= check(f"x dow_{d} rows == calendar k=0 weekday {d} - unmatched", got == k0 - um[d], f"{got:,} = {k0:,} - {um[d]}")
+
+    meta = {
+        "dir": "data/x/",
+        "cohort_files": {dim: f"{dim}_{{i}}.json, i = index into meta.{dim if dim != 'sex' else 'sexes'}"
+                         .replace("meta.race", "meta.races").replace("meta.age", "meta.ages") for dim in ncoh},
+        "cohort_counts": ncoh,
+        "cohort_schema": {"rows": "[[p,y,o,s,n],...] as cube.json, restricted to the cohort",
+                          "cal_offense": "as calendar.json offense ([(k*Y + y)*12 + m]*7 + d), restricted to the cohort",
+                          "cal_precinct": "as calendar.json precinct ([(p*Y + y)*12 + m]*7 + d), restricted to the cohort"},
+        "calendar_encoding": {"dense": "flat int array, same length/layout as calendar.json",
+                              "sparse": "flat [index, n, index, n, ...] of non-zero entries of the dense array",
+                              "by_file": enc},
+        "dow_files": "dow_{d}.json, d = 0..6, 0=Monday",
+        "dow_schema": {"rows": "[[p,y,o,s,n],...] as cube.json, restricted to the weekday",
+                       "sex": "[[p,y,sexIdx,s,n],...] as demo.json", "race": "[[p,y,raceIdx,s,n],...] as demo.json",
+                       "age": "[[p,y,ageIdx,s,n],...] as demo.json"},
+        "cal_p_files": "cal_p{precinctId}.json (precinctId = meta.precincts[].id): {cells: flat [idx, n, idx, n, ...]} sparse, "
+                       "non-zero only, idx = ((o*Y + y)*12 + m)*7 + d with o = index into meta.offenses (ALL offenses); "
+                       "decode: d = idx%7, m = (idx//7)%12, y = (idx//84)%Y, o = idx//(84*Y)",
+        "cal_offense_all": "cal_offense_all.json: {cal: dense flat int array, length len(offenses)*Y*84}, "
+                           "index ((o*Y + y)*12 + m)*7 + d, o = index into meta.offenses; citywide incl. unmatched precincts",
+        "notes": "precinct-keyed data excludes unmatched precincts (meta.unmatched_precincts); cal_offense includes them, as calendar.json does",
+        "sizes": sizes,
+    }
+    return meta, sizes, ok
+
+
 def main():
     t0 = time.time()
     os.makedirs(DATA, exist_ok=True)
@@ -549,6 +717,9 @@ def main():
         checks.append(f"       heat {yr}: all-cells = year total - {heat_gap[yr]:,} rows with missing/out-of-bbox coords "
                       f"({heat_gap[yr] / ytot[yr]:.3%}), grid {heat_sizes[yr][0]}, {heat_sizes[yr][1]:,} B")
 
+    xmeta, xsizes, xok = build_xfilter(P, ids, oidx, topk, rix, sx, cube, demo, cal_off, cal_pct, len(ids), no_poly, check)
+    ok &= xok
+
     # ---- write
     sizes = {}
     sizes["cube.json"] = dump({"rows": cube_rows}, "cube.json")
@@ -571,6 +742,7 @@ def main():
                  "grid_by_year": {str(y): heat_sizes[y][0] for y in YEARS},
                  "bbox": {"lat": [40.4, 41.0], "lon": [-74.3, -73.6]},
                  "excluded_no_or_out_of_bbox_coords": {str(y): heat_gap[y] for y in YEARS}},
+        "xfilter": xmeta,
         "generated": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "source": {"arrests": ARRESTS, "precincts": PRECINCTS, "population": pop_note},
     }
@@ -583,6 +755,14 @@ def main():
     for k, v in sizes.items():
         print(f"  data/{k:18s} {v / 1024:8.1f} KB")
     print(f"  core total {sum(sizes.values()) / 1e6:.2f} MB; heat/ {sum(s for _, s in heat_sizes.values()) / 1e6:.2f} MB; pd/ {pd_total / 1e6:.2f} MB")
+    for k, v in sorted(xsizes.items()):
+        print(f"  data/x/{k:16s} {v / 1024:8.1f} KB")
+    import gzip
+    gz = {k: len(gzip.compress(open(os.path.join(DATA, "x", k), "rb").read(), 6)) for k in xsizes}
+    print(f"  data/x total {sum(xsizes.values()) / 1e6:.2f} MB (gzip {sum(gz.values()) / 1e6:.2f} MB); "
+          f"largest {max(xsizes.values()) / 1e6:.2f} MB (largest gzip {max(gz.values()) / 1e6:.2f} MB)")
+    for k in sorted(k for k, v in xsizes.items() if v > X_MAX):
+        print(f"  OVER 1.5 MB: data/x/{k} {xsizes[k] / 1e6:.2f} MB raw, {gz[k] / 1e6:.2f} MB gzip")
     print(f"top-15: {[offenses[i]['label'] for i in top]}")
     print(f"races: {races}")
     print(f"done in {time.time() - t0:.0f}s")

@@ -18,7 +18,7 @@ for (const dim of ["sex", "race", "age"])
       assert.strictEqual(w.cells.reduce((a, b) => a + b, 0), w.n ? 100 : 0, dim + " " + p);
 
 const r = M.rank(p75, y(2019), null, "count");
-const c = M.calendar({ kind: "offense", k: 0 }, [y(2019)]);
+const c = M.calendar(M.cal.offense, 0, [y(2019)]);
 assert(Math.abs(c.overall * 365 - M.city(y(2019), null)) < 1);
 assert.strictEqual(M.rank(M.p22, y(2019), null, "rate"), null);
 assert.strictEqual(M.hasData(M.p116, y(2020)), false);
@@ -28,3 +28,24 @@ const pi = (id) => M.pIndex.get(id);
 assert.strictEqual(M.pop(pi(105), y(2024)) + M.pop(pi(113), y(2024)),
   [105, 113, 116].reduce((t, id) => t + M.pop(pi(id), y(2025)), 0));
 assert.strictEqual(M.pop(pi(105), y(2025)), M.meta.precincts[pi(105)].pop);
+
+// ---- cross-filter slices (data/x) ----
+const rx = (f) => rd("x/" + f);
+// a cohort cube's citywide year total equals that cohort's total in demo.json
+const black = M.indexCube([rx("race_0.json").rows], "race:0");
+const demoBlack2019 = rd("demo.json").race.filter((r) => r[1] === y(2019) && r[2] === 0).reduce((t, r) => t + r[4], 0);
+M.useCube(black);
+assert.strictEqual(M.city(y(2019), null), demoBlack2019);
+M.useCube(null);
+assert.strictEqual(M.value(p75, y(2019), null), 6024); // back on the full cube
+// waffle following an offense: sex cohort cubes partition the data, so F/M/V n match the cube
+const sexCubes = [0, 1, 2].map((i) => M.indexCube([rx(`sex_${i}.json`).rows], "sex:" + i));
+const o = 5, wf = M.waffle("sex", p75, [y(2019)], { cubes: sexCubes, o });
+assert.deepStrictEqual(wf.map((w) => w.n), M.sevMix(p75, y(2019), o).slice(0, 3));
+// precinct x offense calendar (sparse cal_p75) sums to the cube value
+const cal75 = M.decodeSparse(rx("cal_p75.json").cells);
+assert.strictEqual(M.calendar(cal75, o, [y(2019)]).total, M.value(p75, y(2019), o));
+// citywide x any offense calendar (includes unmatched precincts, so >=)
+const calAll = rx("cal_offense_all.json").cal;
+assert(M.calendar(calAll, 40, [y(2019)]).total >= M.city(y(2019), 40));
+console.log("ok · cross-filter slices · Black 2019 =", demoBlack2019, "· p75 Felony Assault 2019 =", M.value(p75, y(2019), o));

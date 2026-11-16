@@ -38,15 +38,20 @@
         <label for="offense" class="lbl">Offense</label>
         <select id="offense"></select>
       </div>
-      <div class="ctl">
+      <div class="ctl sel-ctl">
         <span class="lbl">Precinct</span>
         <span id="selChip" class="chip-static">Citywide — click a precinct</span>
+      </div>
+      <div class="ctl xf-ctl">
+        <span class="lbl">Cross-filter</span>
+        <span id="xfChip" class="chip-static">none — click a waffle cohort or a weekday</span>
       </div>
     </div>
   </header>
 
   <main class="grid">
     <section class="panel" id="viewA" aria-labelledby="hA">
+      <div class="vstatus" role="status" hidden></div>
       <div class="phead">
         <div>
           <h2 id="hA">Where — arrests by precinct</h2>
@@ -72,6 +77,7 @@
     </section>
 
     <section class="panel" id="viewB" aria-labelledby="hB">
+      <div class="vstatus" role="status" hidden></div>
       <div class="phead">
         <div>
           <h2 id="hB">What — <span id="bTitle">New York City</span></h2>
@@ -96,9 +102,10 @@
     </section>
 
     <section class="panel" id="viewC" aria-labelledby="hC">
+      <div class="vstatus" role="status" hidden></div>
       <div class="phead">
         <div>
-          <h2 id="hC">Who — share of arrests by cohort within each charge severity</h2>
+          <h2 id="hC">Who — share of arrests by cohort within each charge severity <span class="muted">· click a cohort to cross-filter</span></h2>
           <p class="psub" id="subC"></p>
         </div>
         <div class="chips">
@@ -120,9 +127,10 @@
     </section>
 
     <section class="panel" id="viewD" aria-labelledby="hD">
+      <div class="vstatus" role="status" hidden></div>
       <div class="phead">
         <div>
-          <h2 id="hD">When — mean arrests per day by weekday × month</h2>
+          <h2 id="hD">When — mean arrests per day by weekday × month <span class="muted">· click a weekday to cross-filter</span></h2>
           <p class="psub" id="subD"></p>
         </div>
         <div class="chips">

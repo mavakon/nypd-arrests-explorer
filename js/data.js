@@ -7,35 +7,65 @@
 
   function build(meta, cube, demo, cal) {
     const P = meta.precincts.length, Y = meta.years.length, O = meta.offenses.length;
-    const sev = new Int32Array(P * Y * O * S);
-    const tot = new Int32Array(P * Y * O);
-    const pyAll = new Int32Array(P * Y);
-    const pySev = new Int32Array(P * Y * S);
-    for (const [p, y, o, s, n] of cube.rows) {
-      sev[((p * Y + y) * O + o) * S + s] += n;
-      tot[(p * Y + y) * O + o] += n;
-      pyAll[p * Y + y] += n;
-      pySev[(p * Y + y) * S + s] += n;
+
+    // A "cube" = one set of [p,y,o,s,n] rows indexed into typed arrays. The full cube is the base;
+    // a cross-filter slice (cohort / weekday) is indexed the same way and swapped in with useCube(),
+    // so every lookup below works on "the active cube" through one indirection.
+    function indexCube(rowLists, id) {
+      const c = { id, sev: new Int32Array(P * Y * O * S), tot: new Int32Array(P * Y * O),
+        pyAll: new Int32Array(P * Y), pySev: new Int32Array(P * Y * S) };
+      for (const rows of rowLists) for (const [p, y, o, s, n] of rows) {
+        c.sev[((p * Y + y) * O + o) * S + s] += n;
+        c.tot[(p * Y + y) * O + o] += n;
+        c.pyAll[p * Y + y] += n;
+        c.pySev[(p * Y + y) * S + s] += n;
+      }
+      return c;
     }
+    const base = indexCube([cube.rows], "all");
+    let C = base; // active cube
+    const pyAll = base.pyAll; // existence of a precinct-year always comes from the full data
     const pIndex = new Map(meta.precincts.map((d, i) => [d.id, i]));
     const p22 = pIndex.get(22), p116 = pIndex.get(116);
     
-    // demographics: dims sex / race / age -> Int32Array ((p*Y+y)*C+c)*S+s
-    const dims = {};
-    for (const k of ["sex", "race", "age"]) {
-      const C = (k === "sex" ? meta.sexes : k === "race" ? meta.races : meta.ages).length;
-      const a = new Int32Array(P * Y * C * S);
-      for (const [p, y, c, s, n] of demo[k]) a[((p * Y + y) * C + c) * S + s] += n;
-      dims[k] = { C, a };
+    // demographics: dims sex / race / age -> Int32Array ((p*Y+y)*C+c)*S+s  (demo.json or a dow_{d} file)
+    function indexDemo(src) {
+      const dims = {};
+      for (const k of ["sex", "race", "age"]) {
+        const nC = (k === "sex" ? meta.sexes : k === "race" ? meta.races : meta.ages).length;
+        const a = new Int32Array(P * Y * nC * S);
+        for (const [p, y, c, s, n] of src[k]) a[((p * Y + y) * nC + c) * S + s] += n;
+        dims[k] = { C: nC, a };
+      }
+      return dims;
     }
+    const dims = indexDemo(demo);
 
     const M = {
-      meta, P, Y, O, sev, tot, pyAll, pySev, dims, pIndex, p22, p116,
-      cal, topIdx: meta.top_offenses, _dom: new Map(),
+      meta, P, Y, O, base, dims, pIndex, p22, p116,
+      cal, topIdx: meta.top_offenses, _dom: new Map(), indexCube, indexDemo,
     };
+    M.useCube = (c) => { C = c || base; };
+    // element-wise sum of indexed cubes (folded race "Other" = race_5 + race_6)
+    M.sumCubes = (list, id) => {
+      if (list.length === 1) return list[0];
+      const out = { id };
+      for (const k of ["sev", "tot", "pyAll", "pySev"]) {
+        out[k] = new Int32Array(list[0][k].length);
+        for (const c of list) for (let i = 0; i < c[k].length; i++) out[k][i] += c[k][i];
+      }
+      return out;
+    };
+    M.sumArrays = (list) => {
+      if (list.length === 1) return list[0];
+      const out = new Int32Array(list[0].length);
+      for (const a of list) for (let i = 0; i < a.length; i++) out[i] += a[i];
+      return out;
+    };
+    M.cubeId = () => C.id;
 
-    // ---- basic lookups ----
-    M.value = (p, y, o) => (o == null ? pyAll[p * Y + y] : tot[(p * Y + y) * O + o]);
+    // ---- basic lookups (active cube) ----
+    M.value = (p, y, o) => (o == null ? C.pyAll[p * Y + y] : C.tot[(p * Y + y) * O + o]);
     M.city = (y, o) => { let t = 0; for (let p = 0; p < P; p++) t += M.value(p, y, o); return t; };
     M.hasData = (p, y) => pyAll[p * Y + y] > 0;
     // Precincts created during the period: no data before, partial first year
@@ -87,7 +117,7 @@
 
     // Fixed colour domain for an offense+mode: max over all years
     M.domainMax = (o, mode) => {
-      const key = o + "|" + mode;
+      const key = C.id + "|" + o + "|" + mode;
       if (!M._dom.has(key)) {
         let mx = 0;
         for (let y = 0; y < Y; y++) for (let p = 0; p < P; p++)
@@ -102,7 +132,7 @@
       const out = [0, 0, 0, 0];
       const ps = p == null ? range(P) : [p];
       for (const q of ps) for (let g = 0; g < 4; g++) for (const s of SEV_GROUPS[g])
-        out[g] += o == null ? pySev[(q * Y + y) * S + s] : sev[((q * Y + y) * O + o) * S + s];
+        out[g] += o == null ? C.pySev[(q * Y + y) * S + s] : C.sev[((q * Y + y) * O + o) * S + s];
       return out;
     };
     M.boroughs = Array.from(new Set(meta.precincts.map((d) => d.boro)));
@@ -119,7 +149,7 @@
     M.offenseRanking = (p, y) => {
       const counts = new Float64Array(O);
       const ps = p == null ? range(P) : [p];
-      for (const q of ps) for (let o = 0; o < O; o++) counts[o] += tot[(q * Y + y) * O + o];
+      for (const q of ps) for (let o = 0; o < O; o++) counts[o] += C.tot[(q * Y + y) * O + o];
       return range(O).map((o) => ({ o, n: counts[o] })).filter((d) => d.n > 0).sort((a, b) => b.n - a.n);
     };
 
@@ -136,24 +166,31 @@
       },
       age: { labels: meta.ages.slice(), map: meta.ages.map((_, i) => i) },
     };
-    // returns [{sev, n, counts[], cells[]}] for severities F, M, V
-    M.waffle = (dim, p, years) => {
-      const { C, a } = dims[dim], { labels, map } = M.cohorts[dim];
+    // raw cohort indices (meta order) behind a folded cohort key, e.g. race "Other" = [5, 6]
+    M.rawCohorts = (dim, key) => M.cohorts[dim].map.flatMap((k, i) => (k === key ? [i] : []));
+    // returns [{sev, n, counts[], cells[]}] for severities F, M, V.
+    // src: {dims} (demo-like: demo.json or a weekday slice) or {cubes, o} (one indexed cohort cube
+    // per raw cohort index, restricted to offense o) — the latter is how waffles follow the offense.
+    M.waffle = (dim, p, years, src = { dims }) => {
+      const { labels, map } = M.cohorts[dim], nC = map.length;
+      const at = src.cubes
+        ? (c, q, y, s) => src.cubes[c].sev[((q * Y + y) * O + src.o) * S + s]
+        : (c, q, y, s) => src.dims[dim].a[((q * Y + y) * nC + c) * S + s];
       const ps = p == null ? range(P) : [p];
       return [0, 1, 2].map((s) => {
         const counts = new Array(labels.length).fill(0);
-        for (const q of ps) for (const y of years) for (let c = 0; c < C; c++)
-          counts[map[c]] += a[((q * Y + y) * C + c) * S + s];
+        for (const q of ps) for (const y of years) for (let c = 0; c < nC; c++)
+          counts[map[c]] += at(c, q, y, s);
         const n = counts.reduce((t, v) => t + v, 0);
         return { sev: s, n, counts, cells: largestRemainder(counts, 100) };
       });
     };
 
     // ---- calendar ----
-    // slice: {kind:"offense", k} or {kind:"precinct", p}; years: array of year indices
-    M.calendar = (slice, years) => {
-      const arr = slice.kind === "offense" ? cal.offense : cal.precinct;
-      const base = slice.kind === "offense" ? slice.k : slice.p;
+    // Every calendar array shares one layout: index ((base*Y + y)*12 + m)*7 + d, where base is
+    // k (calendar.offense / cohort cal_offense), p (calendar.precinct / cohort cal_precinct) or
+    // o (cal_offense_all, decoded cal_p{id}). years: array of year indices.
+    M.calendar = (arr, base, years) => {
       const cnt = Array.from({ length: 7 }, () => new Array(12).fill(0));
       const days = Array.from({ length: 7 }, () => new Array(12).fill(0));
       for (const y of years) {
@@ -176,6 +213,13 @@
         return c / n;
       });
       return { mean, cnt, days, rowMean, colMean, overall: total / totalDays, total };
+    };
+
+    // sparse [idx, n, idx, n, ...] -> dense Int32Array (cal_p{id}.json: one slot per offense)
+    M.decodeSparse = (cells) => {
+      const out = new Int32Array(O * Y * 84);
+      for (let i = 0; i < cells.length; i += 2) out[cells[i]] += cells[i + 1];
+      return out;
     };
 
     return M;
