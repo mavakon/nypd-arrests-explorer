@@ -199,19 +199,19 @@
         document.querySelectorAll(`[data-${attr}]`).forEach((b) => b.setAttribute("aria-pressed", String(b.dataset[attr] === S[attr])));
       const chip = $("#selChip");
       chip.replaceChildren();
-      if (S.precinct == null) { chip.className = "chip-static"; chip.textContent = "Citywide — click a precinct"; }
+      if (S.precinct == null) { chip.className = "chip-static"; chip.textContent = "Citywide — click a precinct"; chip.title = "Citywide: click a precinct on the map to select it"; }
       else {
         const d = meta.precincts[S.precinct];
-        chip.className = "";
-        const b = el("button", { class: "chip-x", type: "button", "aria-label": `Clear precinct ${d.id} selection`, text: `Precinct ${d.id} · ${d.boro}  ×` });
+        chip.className = ""; chip.title = "";
+        const b = el("button", { class: "chip-x", type: "button", title: `Precinct ${d.id} · ${d.boro} — click or Esc to clear`, "aria-label": `Clear precinct ${d.id} selection`, text: `Precinct ${d.id} · ${d.boro}  ×` });
         b.addEventListener("click", () => set({ precinct: null }));
         chip.appendChild(b);
       }
       const xc = $("#xfChip");
       xc.replaceChildren();
-      if (!S.xf) { xc.className = "chip-static"; xc.textContent = "none — click a waffle cohort or a weekday"; }
+      if (!S.xf) { xc.className = "chip-static"; xc.textContent = "none — click a cohort or weekday"; xc.title = "None: click a waffle cohort (cell or legend) or a calendar weekday to cross-filter the other views"; }
       else {
-        xc.className = "";
+        xc.className = ""; xc.title = "";
         const b = el("button", { class: "chip-x", type: "button", "aria-label": `Clear cross-filter ${xfLabel()}`, title: `${xfLabel()} — click or Esc to clear`, text: `${xfLabel()}  ×` });
         b.addEventListener("click", () => set({ xf: null }));
         xc.appendChild(b);

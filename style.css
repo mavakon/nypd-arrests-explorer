@@ -248,7 +248,7 @@ select { background: var(--surface); border: 1px solid var(--axis); border-radiu
 .sel-ctl { width: 240px; }
 .xf-ctl { width: 300px; }
 .sel-ctl, .xf-ctl { min-width: 0; }
-.sel-ctl > span:last-child, .xf-ctl > span:last-child { min-width: 0; display: flex; }
+.sel-ctl > span:last-child, .xf-ctl > span:last-child { min-width: 0; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sel-ctl .chip-static, .sel-ctl .chip-x, .xf-ctl .chip-static, .xf-ctl .chip-x { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; max-width: 100%; }
 #offense { width: 260px; }
 .panel { position: relative; }
