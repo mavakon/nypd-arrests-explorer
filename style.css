@@ -41,7 +41,7 @@
     --race-other: #4a4a46;
     --age-1: #1f6128; --age-2: #2a7a33; --age-3: #3d9b45; --age-4: #6fc26f; --age-5: #a8dca8;
     --seq: #12294a,#104281,#184f95,#256abf,#3987e5,#6da7ec,#cde2fb;
-    --seq2: #3a1514,#6b1d1c,#9c2a28,#d84a43,#ec7d72,#f6b3ab;
+    --seq2: #f6b3ab,#ec7d72,#d84a43,#9c2a28,#6b1d1c;
     --div: #6da7ec,#256abf,#383835,#d84a43,#f6b3ab;
     --nodata: #2c2c2a; --hatch-line: #4a4a46;
   }
@@ -57,7 +57,7 @@
   --race-other: #4a4a46;
   --age-1: #1f6128; --age-2: #2a7a33; --age-3: #3d9b45; --age-4: #6fc26f; --age-5: #a8dca8;
   --seq: #12294a,#104281,#184f95,#256abf,#3987e5,#6da7ec,#cde2fb;
-  --seq2: #3a1514,#6b1d1c,#9c2a28,#d84a43,#ec7d72,#f6b3ab;
+  --seq2: #f6b3ab,#ec7d72,#d84a43,#9c2a28,#6b1d1c;
   --div: #6da7ec,#256abf,#383835,#d84a43,#f6b3ab;
   --nodata: #2c2c2a; --hatch-line: #4a4a46;
 }
