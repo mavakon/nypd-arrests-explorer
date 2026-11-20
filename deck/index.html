@@ -192,7 +192,11 @@ section.demo { padding: 0; gap: 0; }
 /* closing */
 .url { font-family: 'Space Grotesk', Arial, sans-serif; font-size: 60px; font-weight: 600; }
 .fq { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
-.fcard { background: #1F2E52; border-radius: 16px; padding: 28px 32px; border-top: 6px solid var(--orange); font-size: 30px; }
+.fcard { background: #1F2E52; border-radius: 16px; padding: 28px 32px; border-top: 6px solid var(--orange); font-size: 30px;
+  opacity: 0; transform: translateY(12px); transition: opacity var(--d-exit) var(--ease-in), transform var(--d-exit) var(--ease-in); }
+/* closing storyboard: slide fades in, then the three questions arrive one by one (--chain apart) */
+section.cur .fcard { opacity: 1; transform: none; --t: calc(var(--d-xfade) + var(--i) * var(--chain));
+  transition: opacity var(--d-in) var(--ease-out) var(--t), transform var(--d-in) var(--ease-out) var(--t); }
 
 /* chrome outside the stage */
 #ui { position: fixed; right: 12px; bottom: 10px; display: flex; align-items: center; gap: 6px; opacity: .35; transition: opacity var(--d-press) ease; font: 13px Inter, Arial, sans-serif; color: #fff; }
@@ -410,24 +414,23 @@ body.notes #ui { bottom: calc(10px + var(--nh, 0px)); }
   <div class="notes2">
     <div class="item" data-step="2" style="--delay:calc(2 * var(--chain))"><p><b>Checks:</b> precinct cube 6,264,974 + 4 arrests in precincts without a polygon = 6,264,978. The 7,116 rows without usable coordinates are missing only from the heat layer.</p></div>
     <div class="item" data-step="2" style="--delay:calc(2 * var(--chain) + var(--stag-piece))"><p><b>Changed from the sheet:</b> it planned Python + Dash + Plotly; we built a static D3 + Leaflet site — no server to host or keep running.</p></div>
-    <div class="item" data-step="2" style="--delay:calc(2 * var(--chain) + 2 * var(--stag-piece))"><p><b>Remaining:</b> report and video.</p></div>
   </div>
-  <aside>How it is built. The source is the NYC Open Data API, 6.3 million rows. [→] A Python script aggregates on the server with SoQL, so we never download the raw rows; it caches responses and checks totals; the output is static JSON. [→] The browser does the rest with D3 and Leaflet, no server, on GitHub Pages. Totals reconcile to the row; one change from the sheet: Dash became a static site. What remains is the report and the video.</aside>
+  <aside>How it is built. The source is the NYC Open Data API, 6.3 million rows. [→] A Python script aggregates on the server with SoQL, so we never download the raw rows; it caches responses and checks totals; the output is static JSON. [→] The browser does the rest with D3 and Leaflet, no server, on GitHub Pages. Totals reconcile to the row; one change from the sheet: Dash became a static site.</aside>
 </section>
 
 <!-- 8 · closing -->
-<section class="dark" data-steps="3">
+<section class="dark" data-steps="0">
   <div class="head"><p class="eyebrow">Try it live</p><p class="url"><a href="https://mavakon.github.io/nypd-arrests-explorer/" target="_blank" rel="noopener">mavakon.github.io/nypd-arrests-explorer</a></p></div>
   <div class="spacer"></div>
   <h2>Feedback welcome</h2>
   <div class="fq">
-    <div class="fcard" data-step="1">Is the cross-filtering discoverable?</div>
-    <div class="fcard" data-step="2">Are the waffles readable for small groups?</div>
-    <div class="fcard" data-step="3">Anything confusing in the calendar’s % mode?</div>
+    <div class="fcard" style="--i:0">Is the cross-filtering discoverable?</div>
+    <div class="fcard" style="--i:1">Are the waffles readable for small groups?</div>
+    <div class="fcard" style="--i:2">Anything confusing in the calendar’s % mode?</div>
   </div>
   <div class="spacer"></div>
   <p class="small">Lada Spektorovska · Maksym Konshyn · Nikita Dakhno — PV251, seminar group 5</p>
-  <aside>Try it yourselves at this address. We’d like feedback on three things: [→] is the cross-filtering discoverable? [→] Are the waffles readable for small groups? [→] Is the calendar’s percent mode clear? Thank you.</aside>
+  <aside>Try it yourselves at this address. We’d like feedback on three things: is the cross-filtering discoverable? Are the waffles readable for small groups? Is the calendar’s percent mode clear? Thank you.</aside>
 </section>
 
 </div>
