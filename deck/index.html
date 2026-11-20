@@ -1,0 +1,394 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NYC Arrests Explorer — PV251 final design</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=Space+Grotesk:wght@500;600;700&display=swap">
+<style>
+:root { --ink:#14213D; --paper:#FBFBF8; --tone:#F0EEE7; --soft:#4A5568; --dsoft:#C9CFDB; --line:#D8D4C8;
+  --orange:#eb6834; --violet:#6250d6; --aqua:#1baf7a; --s:1; --ease:cubic-bezier(.2,.7,.2,1); }
+* { box-sizing: border-box; margin: 0; }
+html, body { height: 100%; overflow: hidden; background: var(--ink); }
+body { font-family: 'Inter', Arial, sans-serif; color: var(--ink); }
+#stage { position: absolute; left: 50%; top: 50%; width: 1920px; height: 1080px; overflow: hidden;
+  transform: translate(-50%, -50%) scale(var(--s)); background: var(--paper); }
+
+/* slides: stacked, only .cur visible */
+section { position: absolute; inset: 0; background: var(--paper); font-size: 30px; line-height: 1.35;
+  padding: 96px 128px 112px; display: flex; flex-direction: column; gap: 40px;
+  opacity: 0; visibility: hidden; transition: opacity .45s var(--ease), visibility 0s .45s; }
+section.cur { opacity: 1; visibility: visible; transition: opacity .45s var(--ease); }
+section.dark { background: var(--ink); color: var(--paper); }
+aside { display: none; }
+
+/* step reveal */
+[data-step] { transition: opacity .4s var(--ease), transform .4s var(--ease); }
+[data-step]:not(.on) { opacity: 0; transform: translateY(16px); pointer-events: none; }
+
+h1, h2, h3 { font-family: 'Space Grotesk', Arial, sans-serif; line-height: 1.1; }
+h1 { font-size: 120px; font-weight: 700; letter-spacing: -2px; }
+h2 { font-size: 64px; font-weight: 700; letter-spacing: -1px; }
+h3 { font-size: 40px; font-weight: 600; }
+.head { display: flex; flex-direction: column; gap: 12px; }
+.eyebrow { font-size: 24px; font-weight: 600; letter-spacing: 3px; text-transform: uppercase; color: var(--violet); }
+.dark .eyebrow { color: var(--orange); }
+.lead { font-size: 40px; line-height: 1.25; color: var(--soft); }
+.dark .lead { color: var(--dsoft); }
+.small { font-size: 24px; color: var(--soft); }
+.dark .small { color: var(--dsoft); }
+.spacer { flex: 1; }
+a { color: inherit; }
+
+/* cover */
+.sevbar { display: flex; gap: 8px; width: 480px; }
+.sevbar i { height: 12px; border-radius: 6px; flex: 1; }
+.names { display: flex; gap: 64px; }
+.who { font-family: 'Space Grotesk', Arial, sans-serif; font-size: 40px; font-weight: 600; }
+.uco { font-size: 24px; color: var(--dsoft); }
+
+/* topic */
+.stats { display: grid; grid-template-columns: 440px 1fr 1fr 580px; gap: 24px; }
+.stat { background: var(--tone); border-radius: 16px; padding: 28px 32px; display: flex; flex-direction: column; gap: 8px; }
+.num { font-family: 'Space Grotesk', Arial, sans-serif; font-size: 64px; font-weight: 700; line-height: 1; }
+.cap { font-size: 24px; color: var(--soft); }
+.qs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; }
+.q { border-top: 6px solid var(--orange); padding-top: 20px; display: flex; flex-direction: column; gap: 8px; }
+.qk { font-family: 'Space Grotesk', Arial, sans-serif; font-size: 40px; font-weight: 700; }
+.qt { font-size: 30px; color: var(--soft); }
+.cav { display: flex; flex-direction: column; gap: 16px; }
+.caveat { font-size: 30px; font-weight: 600; border-left: 6px solid var(--violet); padding-left: 24px; }
+.caveat2 { font-size: 24px; color: var(--soft); border-left: 6px solid var(--violet); padding-left: 24px; }
+
+/* sheet camera */
+section.split { padding: 0; flex-direction: row; gap: 0; }
+.cam { position: relative; width: 1000px; height: 1080px; flex: none; overflow: hidden; background: var(--tone); }
+.cam-in { position: absolute; left: 0; top: 0; width: 955px; height: 1280px; transform-origin: 0 0;
+  transition: transform .55s var(--ease); --cs: 1; }
+.cam-in img { display: block; width: 955px; height: 1280px; }
+.hl { position: absolute; border: calc(5px / var(--cs)) solid var(--orange); border-radius: calc(8px / var(--cs));
+  box-shadow: 0 0 0 4000px rgba(20,33,61,.4); opacity: 0;
+  transition: opacity .4s var(--ease), left .55s var(--ease), top .55s var(--ease), width .55s var(--ease), height .55s var(--ease); }
+.hl.on { opacity: 1; }
+.split-body { flex: 1; min-width: 0; padding: 96px 96px 112px 80px; display: flex; flex-direction: column; gap: 40px; }
+.pstack { flex: 1; display: grid; }
+.pstack > * { grid-area: 1 / 1; display: flex; flex-direction: column; gap: 28px; }
+.grid4 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.cell { background: var(--tone); border-radius: 12px; padding: 24px 32px; display: flex; flex-direction: column; gap: 4px; }
+.letter { font-family: 'Space Grotesk', Arial, sans-serif; font-size: 64px; font-weight: 700; line-height: 1; color: var(--orange); }
+.cell-t { font-family: 'Space Grotesk', Arial, sans-serif; font-size: 40px; font-weight: 600; }
+.cell-s { font-size: 24px; color: var(--soft); }
+.vhead { display: flex; align-items: baseline; gap: 28px; }
+.vhead .letter { font-size: 120px; }
+.vq { font-size: 30px; color: var(--soft); }
+.vq b { font-family: 'Space Grotesk', Arial, sans-serif; color: var(--ink); }
+.dcard { background: var(--tone); border-radius: 16px; padding: 28px 36px; display: flex; flex-direction: column; gap: 20px; }
+.dline { font-size: 30px; line-height: 1.35; color: var(--soft); }
+.tag { display: block; font-size: 24px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: var(--violet); }
+.colours { display: flex; flex-wrap: wrap; align-items: center; gap: 16px 32px; }
+.clabel { width: 100%; font-size: 26px; font-weight: 600; }
+.sw { display: flex; align-items: center; gap: 12px; font-size: 26px; }
+.chip { width: 28px; height: 28px; border-radius: 6px; }
+.ramp { width: 140px; height: 28px; border-radius: 6px; background: linear-gradient(90deg, #E3ECF8, #1F4E9C); }
+
+/* items (orange left border) */
+.item { border-left: 5px solid var(--orange); padding-left: 20px; display: flex; flex-direction: column; gap: 2px; }
+.it { font-size: 30px; font-weight: 600; }
+.id { font-size: 24px; color: var(--soft); }
+.ops { display: flex; flex-direction: column; gap: 28px; }
+
+/* interactivity */
+.irow { display: flex; gap: 48px; align-items: flex-start; }
+.shot-panel { width: 1152px; flex: none; background: var(--tone); border-radius: 16px; padding: 24px; display: flex; flex-direction: column; gap: 16px; }
+.shot { position: relative; width: 1104px; height: 621px; }
+.shot img { display: block; width: 100%; height: 100%; border: 2px solid var(--line); }
+.ring { position: absolute; left: calc(var(--x) / 1920 * 100%); top: calc(var(--y) / 1080 * 100%);
+  width: calc(var(--w) / 1920 * 100%); height: calc(var(--h) / 1080 * 100%);
+  border: 4px solid var(--orange); border-radius: 10px; box-shadow: 0 0 0 3px rgba(255,255,255,.85), 0 0 0 4000px rgba(20,33,61,.18); }
+.ring + .ring { box-shadow: 0 0 0 3px rgba(255,255,255,.85); }
+.ilist { flex: 1; display: flex; flex-direction: column; gap: 16px; }
+.ilist .item { transition: opacity .4s var(--ease), transform .4s var(--ease), background .3s; border-radius: 0 10px 10px 0; padding: 8px 16px 8px 20px; }
+.ilist .item.on:not(.act) { opacity: .45; }
+.ilist .item.act { background: var(--tone); }
+
+/* demo */
+section.demo { padding: 0; gap: 0; }
+.dbar { height: 88px; flex: none; display: flex; align-items: center; justify-content: space-between; padding: 0 48px; background: var(--ink); color: var(--paper); }
+.dbar h3 { font-size: 36px; }
+.dbar a { font-size: 26px; color: var(--dsoft); }
+.dframe { position: relative; flex: 1; }
+.dframe img, .dframe iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.dframe img { object-fit: cover; object-position: top; }
+
+/* closing */
+.url { font-family: 'Space Grotesk', Arial, sans-serif; font-size: 60px; font-weight: 600; }
+.fq { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+.fcard { background: #1F2E52; border-radius: 16px; padding: 28px 32px; border-top: 6px solid var(--orange); font-size: 30px; }
+
+/* chrome outside the stage */
+#ui { position: fixed; right: 12px; bottom: 10px; display: flex; align-items: center; gap: 6px; opacity: .35; transition: opacity .2s; font: 13px Inter, Arial, sans-serif; color: #fff; }
+#ui:hover { opacity: 1; }
+#ui button { background: var(--ink); color: #fff; border: 1px solid #fff5; border-radius: 6px; width: 30px; height: 26px; cursor: pointer; font-size: 14px; }
+#ui span { background: var(--ink); padding: 3px 8px; border-radius: 6px; }
+#bar { position: fixed; left: 0; bottom: 0; height: 3px; background: var(--orange); transition: width .3s var(--ease); }
+#notes { position: fixed; left: 0; right: 0; bottom: 0; max-height: 40vh; overflow: auto; padding: 16px 24px 28px;
+  background: rgba(20,33,61,.95); color: var(--paper); font: 18px/1.5 Inter, Arial, sans-serif; display: none; }
+body.notes #notes { display: block; }
+body.notes #ui { bottom: calc(10px + var(--nh, 0px)); }
+
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } [data-step]:not(.on) { transform: none; } }
+</style>
+</head>
+<body>
+<div id="stage">
+
+<!-- 1 · cover -->
+<section class="dark" data-steps="0">
+  <p class="eyebrow">PV251 Visualization · Seminar group 5 · Final design</p>
+  <div class="spacer"></div>
+  <div class="head">
+    <h1>NYC Arrests Explorer</h1>
+    <p class="lead">Two decades of NYPD arrests: who gets arrested, for what, where and when.</p>
+  </div>
+  <div class="sevbar"><i style="background:var(--orange)"></i><i style="background:var(--violet)"></i><i style="background:var(--aqua)"></i></div>
+  <div class="spacer"></div>
+  <div class="names">
+    <div><p class="who">Lada Spektorovska</p><p class="uco">595755</p></div>
+    <div><p class="who">Maksym Konshyn</p><p class="uco">595740</p></div>
+    <div><p class="who">Nikita Dakhno</p><p class="uco">599440</p></div>
+  </div>
+  <aside>Hi, we’re Lada, Maksym and Nikita from seminar group five. Our project is the NYC Arrests Explorer: twenty years of NYPD arrest records — who gets arrested, for what, where and when. We’ll go through the data, our final design sheet, the design choices and interactions, and where the implementation stands.</aside>
+</section>
+
+<!-- 2 · topic & data -->
+<section data-steps="3">
+  <div class="head"><p class="eyebrow">01 · Topic &amp; data</p><h2>Two decades of NYPD arrests</h2></div>
+  <div class="stats" data-step="1">
+    <div class="stat"><p class="num">6,264,978</p><p class="cap">arrests, 2006–2025</p></div>
+    <div class="stat"><p class="num">78</p><p class="cap">precincts</p></div>
+    <div class="stat"><p class="num">77</p><p class="cap">offense categories</p></div>
+    <div class="stat"><p class="num">422k → 140k</p><p class="cap">arrests per year, 2010 → 2020</p></div>
+  </div>
+  <div class="qs" data-step="2">
+    <div class="q"><p class="qk">Who</p><p class="qt">Sex, race and age vs. charge severity</p></div>
+    <div class="q"><p class="qk">What</p><p class="qt">Most common offenses per precinct and year</p></div>
+    <div class="q"><p class="qk">Where</p><p class="qt">Precincts with unusually many arrests</p></div>
+    <div class="q"><p class="qk">When</p><p class="qt">Long-term trend and seasonality</p></div>
+  </div>
+  <div class="spacer"></div>
+  <div class="cav" data-step="3">
+    <p class="caveat">Arrests are a record of police activity, not of crimes committed.</p>
+    <p class="caveat2">2025: sex and age are missing for ~53% of records, so demographic views default to 2024.</p>
+  </div>
+  <p class="small">Source: NYPD Arrests Data (Historic), NYC Open Data</p>
+  <aside>Our data is the NYPD Arrests Data, historic, from NYC Open Data: about 6.3 million arrests from 2006 to 2025, across 78 precincts and 77 offense categories. Arrests fell a lot over that time, from about 422 thousand a year in 2010 to about 140 thousand in 2020. The tool answers four questions: who gets arrested, by sex, race and age against charge severity; what the most common offenses are per precinct and year; where there are unusually many arrests; and when, meaning the trend and seasonality. One caveat we keep in the tool too: arrests record police activity, not crimes committed. And one data issue: in 2025 sex and age are missing for about 53 percent of records, so the demographic views default to 2024.</aside>
+</section>
+
+<!-- 3 · design sheet walk-through (camera) -->
+<section class="split" data-steps="6" id="sheet">
+  <div class="cam"><div class="cam-in"><img src="img/sheet.jpg" alt="Hand-drawn Design Sheet 5: a 2×2 dashboard with a precinct map, a precinct detail panel, waffle charts and a calendar heatmap, plus focus, operations and detail notes"><div class="hl"></div></div></div>
+  <div class="split-body">
+    <div class="head"><p class="eyebrow">02 · Final design sheet</p><h2>Design Sheet 5</h2></div>
+    <div class="pstack">
+      <div data-step="0" data-until="0">
+        <p class="lead">Our combined design: one 2×2 dashboard, one view per question.</p>
+        <div class="grid4">
+          <div class="cell"><p class="letter">A</p><p class="cell-t">Map</p><p class="cell-s">Where</p></div>
+          <div class="cell"><p class="letter">B</p><p class="cell-t">Precinct detail</p><p class="cell-s">What</p></div>
+          <div class="cell"><p class="letter">C</p><p class="cell-t">Waffles</p><p class="cell-s">Who</p></div>
+          <div class="cell"><p class="letter">D</p><p class="cell-t">Calendar</p><p class="cell-s">When</p></div>
+        </div>
+      </div>
+      <div data-step="1" data-until="1">
+        <div class="vhead"><p class="letter">A</p><h2>Map</h2></div>
+        <p class="vq"><b>Where</b> — precincts with unusually many arrests</p>
+        <div class="dcard">
+          <p class="dline"><span class="tag">Encoding</span>Precinct choropleth, switchable to density heat or donut clusters</p>
+          <p class="dline"><span class="tag">Why</span>Count or per 10k residents, so big precincts don’t dominate</p>
+        </div>
+      </div>
+      <div data-step="2" data-until="2">
+        <div class="vhead"><p class="letter">B</p><h2>Precinct detail</h2></div>
+        <p class="vq"><b>What</b> — most common offenses per precinct and year</p>
+        <div class="dcard">
+          <p class="dline"><span class="tag">Encoding</span>Top offenses as sorted bars, a trend line over the years, a severity-mix bar</p>
+          <p class="dline"><span class="tag">Why</span>Ranking, trend and mix of one precinct side by side</p>
+        </div>
+      </div>
+      <div data-step="3" data-until="3">
+        <div class="vhead"><p class="letter">C</p><h2>Waffles</h2></div>
+        <p class="vq"><b>Who</b> — sex, race and age vs. charge severity</p>
+        <div class="dcard">
+          <p class="dline"><span class="tag">Encoding</span>10×10 isotype waffles per severity, 1 figure = 1%</p>
+          <p class="dline"><span class="tag">Why</span>Shares are countable and comparable across severities</p>
+        </div>
+      </div>
+      <div data-step="4" data-until="4">
+        <div class="vhead"><p class="letter">D</p><h2>Calendar</h2></div>
+        <p class="vq"><b>When</b> — long-term trend and seasonality</p>
+        <div class="dcard">
+          <p class="dline"><span class="tag">Encoding</span>Weekday × month calendar heatmap, absolute or % deviation</p>
+          <p class="dline"><span class="tag">Why</span>Separates the overall level from seasonality</p>
+        </div>
+      </div>
+      <div data-step="5" data-until="5">
+        <h3>Operations</h3>
+        <div class="ops">
+          <div class="item"><p class="it">Linked filtering</p><p class="id">Click a precinct in A — B, C and D follow</p></div>
+          <div class="item"><p class="it">Layer switching</p><p class="id">Choropleth · density heat · donut clusters</p></div>
+          <div class="item"><p class="it">Count / per 10k</p><p class="id">Normalise by population</p></div>
+          <div class="item"><p class="it">Abs / %</p><p class="id">Calendar in raw counts or row-normalised shares</p></div>
+        </div>
+      </div>
+      <div data-step="6">
+        <p class="lead">One 2×2 dashboard, one view per question.</p>
+        <div class="grid4">
+          <div class="cell"><p class="letter">A</p><p class="cell-t">Map</p><p class="cell-s">Where</p></div>
+          <div class="cell"><p class="letter">B</p><p class="cell-t">Precinct detail</p><p class="cell-s">What</p></div>
+          <div class="cell"><p class="letter">C</p><p class="cell-t">Waffles</p><p class="cell-s">Who</p></div>
+          <div class="cell"><p class="letter">D</p><p class="cell-t">Calendar</p><p class="cell-s">When</p></div>
+        </div>
+        <div class="colours">
+          <p class="clabel">Severity colours stay fixed:</p>
+          <div class="sw"><div class="chip" style="background:var(--orange)"></div>Felony</div>
+          <div class="sw"><div class="chip" style="background:var(--violet)"></div>Misdemeanor</div>
+          <div class="sw"><div class="chip" style="background:var(--aqua)"></div>Violation</div>
+          <div class="sw"><div class="ramp"></div>Magnitude: one hue</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <aside>This is our final design, Design Sheet 5: one dashboard on a 2 by 2 grid. [→] View A, the precinct map — the where: a choropleth, switchable to a heat map or donut clusters, in raw counts or per ten thousand residents so big precincts don’t dominate. [→] View B, the precinct detail panel — what gets charged: top offenses as sorted bars, the trend as a line, the severity mix as one bar. [→] View C, waffles for who is arrested: ten by ten, one figure per percent, so shares can be counted and compared. [→] View D, the calendar heatmap for when: weekday by month, absolute or percent. [→] The operations: clicking a precinct filters the other views, layer switching, count versus per 10k, absolute versus percent. [→] And severity keeps the same three colours in every view; magnitude is always a single-hue ramp.</aside>
+</section>
+
+<!-- 4 · interactivity -->
+<section data-steps="6" style="padding:72px 72px 0; gap:36px">
+  <div class="head"><p class="eyebrow">03 · Interactivity</p><h2>Linked views, driven by clicks</h2></div>
+  <div class="irow">
+    <div class="shot-panel">
+      <div class="shot">
+        <img src="img/precinct75.png" alt="The live dashboard with Precinct 75, Brooklyn, selected for 2010 and Dangerous Drugs (Misdemeanor): the map outlines the precinct and the offense bars, waffles and calendar all show that precinct">
+        <div class="ring" data-step="1" data-until="1" style="--x:446;--y:12;--w:366;--h:40"></div>
+        <div class="ring" data-step="2" data-until="2" style="--x:874;--y:13;--w:272;--h:38"></div>
+        <div class="ring" data-step="3" data-until="3" style="--x:516;--y:330;--w:82;--h:90"></div>
+        <div class="ring" data-step="4" data-until="4" style="--x:332;--y:618;--w:306;--h:308"></div>
+        <div class="ring" data-step="4" data-until="4" style="--x:994;--y:622;--w:46;--h:304"></div>
+        <div class="ring" data-step="5" data-until="5" style="--x:600;--y:85;--w:346;--h:34"></div>
+        <div class="ring" data-step="5" data-until="5" style="--x:1650;--y:558;--w:90;--h:34"></div>
+      </div>
+      <p class="small">Precinct 75 selected: the offense bars, waffles and calendar all follow.</p>
+    </div>
+    <div class="ilist">
+      <div class="item" data-step="1" data-active="1"><p class="it">Year slider + play</p><p class="id">Step or animate through 2006–2025</p></div>
+      <div class="item" data-step="2" data-active="2"><p class="it">Offense filter</p><p class="id">Narrow every view to one category</p></div>
+      <div class="item" data-step="3" data-active="3"><p class="it">Click a precinct</p><p class="id">All views follow that precinct</p></div>
+      <div class="item" data-step="4" data-active="4"><p class="it">Click a cohort or weekday</p><p class="id">Cross-filters the other views</p></div>
+      <div class="item" data-step="5" data-active="5"><p class="it">Toggles</p><p class="id">Map layer · count / per 10k · abs / %</p></div>
+      <div class="item" data-step="6" data-active="6"><p class="it">Tooltips everywhere</p><p class="id">Exact values on every mark</p></div>
+    </div>
+  </div>
+  <aside>All four views are linked. [→] A year slider with a play button steps through 2006 to 2025, [→] and an offense filter narrows everything to one category. [→] Clicking a precinct on the map makes every other view follow it — here precinct 75 in Brooklyn. [→] Clicking a cohort in the waffles, or a weekday in the calendar, cross-filters the other views. [→] Toggles switch the map layer, count versus per ten thousand, and absolute versus percent in the calendar. [→] And there are tooltips on every mark for exact numbers.</aside>
+</section>
+
+<!-- 5 · live demo -->
+<section class="demo" data-steps="0" id="demo">
+  <div class="dbar"><h3>We have a working version</h3><a href="https://mavakon.github.io/nypd-arrests-explorer/" target="_blank" rel="noopener">mavakon.github.io/nypd-arrests-explorer</a></div>
+  <div class="dframe"><img src="img/overview.png" alt="The full live dashboard: map, offense bars and trend, waffle charts and calendar heatmap"><iframe title="NYC Arrests Explorer, live"></iframe></div>
+  <aside>The unusual part: we already have a working version. All four views from the design sheet and the interactions between them are implemented, and it is online. Demo, 30 seconds: pick a precinct, then click a cohort in the waffles, and show how the other views follow. Click inside the app to use it; PageDown / PageUp still move the slides. If asked how: a static site built with D3 and Leaflet; the report and the video are what remain.</aside>
+</section>
+
+<!-- 6 · closing -->
+<section class="dark" data-steps="3">
+  <div class="head"><p class="eyebrow">Try it live</p><p class="url"><a href="https://mavakon.github.io/nypd-arrests-explorer/" target="_blank" rel="noopener">mavakon.github.io/nypd-arrests-explorer</a></p></div>
+  <div class="spacer"></div>
+  <h2>Feedback welcome</h2>
+  <div class="fq">
+    <div class="fcard" data-step="1">Is the cross-filtering discoverable?</div>
+    <div class="fcard" data-step="2">Are the waffles readable for small groups?</div>
+    <div class="fcard" data-step="3">Anything confusing in the calendar’s % mode?</div>
+  </div>
+  <div class="spacer"></div>
+  <p class="small">Lada Spektorovska · Maksym Konshyn · Nikita Dakhno — PV251, seminar group 5</p>
+  <aside>The site is at mavakon.github.io/nypd-arrests-explorer, so you can try it yourselves. We’d really like your feedback, especially on three things: [→] is the cross-filtering discoverable without being told? [→] Are the waffles still readable when a group is small? [→] And is anything confusing about the calendar’s percent mode? Thank you.</aside>
+</section>
+
+</div>
+<div id="bar"></div>
+<div id="ui"><button id="prev" aria-label="Previous">‹</button><span id="count"></span><button id="next" aria-label="Next">›</button></div>
+<div id="notes"></div>
+
+<script>
+const secs = [...document.querySelectorAll('section')];
+const steps = secs.map(s => +s.dataset.steps);
+const total = steps.reduce((a, n) => a + n + 1, 0);
+// sheet camera stops [x, y, w, h] in sheet.jpg pixels (955×1280); null = whole sheet
+const CAM = [null, [35,175,435,275], [465,212,485,205], [30,448,445,210], [470,418,480,245], [615,658,340,330,745], null]; // 5th value: camera centre-y override (keeps '4. DETAIL' out of frame)
+let cur = 0, step = 0;
+
+function camera(r) {
+  const view = document.querySelector('.cam'), inner = view.firstElementChild, hl = inner.querySelector('.hl');
+  const [x, y, w, h, cy = y + h / 2] = r || [0, 0, 955, 1280];
+  const s = Math.min(Math.min(view.clientWidth / w, view.clientHeight / h) * (r ? 0.86 : 0.94), 2.3);
+  inner.style.transform = `translate(${view.clientWidth / 2 - (x + w / 2) * s}px,${view.clientHeight / 2 - cy * s}px) scale(${s})`;
+  inner.style.setProperty('--cs', s);
+  hl.classList.toggle('on', !!r);
+  if (r) Object.assign(hl.style, { left: x + 'px', top: y + 'px', width: w + 'px', height: h + 'px' });
+}
+
+function demo(on) {
+  const f = document.querySelector('#demo iframe');
+  if (on && !f.getAttribute('src')) {
+    f.onload = () => { try { f.contentWindow.addEventListener('keydown', e => {
+      if (e.key === 'PageDown' || e.key === 'PageUp') { e.preventDefault(); go(e.key === 'PageDown' ? 1 : -1); } }); } catch (_) {} };
+    f.src = '../index.html';
+  } else if (!on && f.getAttribute('src')) { const g = f.cloneNode(); g.removeAttribute('src'); f.replaceWith(g); } // drop the running app
+}
+
+function apply() {
+  secs.forEach((s, i) => s.classList.toggle('cur', i === cur));
+  const s = secs[cur];
+  s.querySelectorAll('[data-step]').forEach(e => e.classList.toggle('on',
+    step >= +e.dataset.step && (e.dataset.until == null || step <= +e.dataset.until)));
+  s.querySelectorAll('[data-active]').forEach(e => e.classList.toggle('act', step === +e.dataset.active));
+  if (s.id === 'sheet') camera(CAM[step]);
+  demo(s.id === 'demo');
+  history.replaceState(null, '', `#${cur + 1}.${step}`);
+  const done = steps.slice(0, cur).reduce((a, n) => a + n + 1, 0) + step + 1;
+  document.getElementById('bar').style.width = (done / total * 100) + '%';
+  document.getElementById('count').textContent = `${cur + 1} / ${secs.length}`;
+  document.getElementById('notes').textContent = s.querySelector('aside')?.textContent || '';
+}
+
+function go(d) {
+  if (d > 0) { if (step < steps[cur]) step++; else if (cur < secs.length - 1) { cur++; step = 0; } }
+  else { if (step > 0) step--; else if (cur > 0) { cur--; step = steps[cur]; } }
+  apply();
+}
+function jump(c, st) { cur = Math.max(0, Math.min(secs.length - 1, c)); step = Math.max(0, Math.min(steps[cur], st)); apply(); }
+
+document.addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const k = e.key;
+  if (['ArrowRight', 'PageDown', ' ', 'Enter'].includes(k)) go(1);
+  else if (['ArrowLeft', 'PageUp', 'Backspace'].includes(k)) go(-1);
+  else if (k === 'Home') jump(0, 0);
+  else if (k === 'End') jump(secs.length - 1, steps[secs.length - 1]);
+  else if (k === 'f' || k === 'F') document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
+  else if (k === 'n' || k === 'N') { document.body.classList.toggle('notes'); document.body.style.setProperty('--nh', document.getElementById('notes').offsetHeight + 'px'); }
+  else return;
+  e.preventDefault();
+});
+for (const [id, d] of [['prev', -1], ['next', 1]]) {
+  const b = document.getElementById(id);
+  b.addEventListener('mousedown', e => e.preventDefault()); // never take focus, so Space can't double-fire
+  b.addEventListener('click', () => go(d));
+}
+const fit = () => document.documentElement.style.setProperty('--s', Math.min(innerWidth / 1920, innerHeight / 1080));
+addEventListener('resize', fit); fit();
+const restore = () => { const [hs, ht] = location.hash.slice(1).split('.').map(Number); jump((hs || 1) - 1, ht || 0); };
+addEventListener('hashchange', restore); restore();
+</script>
+</body>
+</html>
