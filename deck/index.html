@@ -8,8 +8,31 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=Space+Grotesk:wght@500;600;700&display=swap">
 <style>
-:root { --ink:#14213D; --paper:#FBFBF8; --tone:#F0EEE7; --soft:#4A5568; --dsoft:#C9CFDB; --line:#D8D4C8;
-  --orange:#eb6834; --violet:#6250d6; --aqua:#1baf7a; --s:1; --ease:cubic-bezier(.2,.7,.2,1); }
+:root {
+  --ink:#14213D; --paper:#FBFBF8; --tone:#F0EEE7; --soft:#4A5568; --dsoft:#C9CFDB; --line:#D8D4C8;
+  --orange:#eb6834; --violet:#6250d6; --aqua:#1baf7a; --s:1;
+  /* motion tokens: every transition/animation below uses these */
+  --ease-out: cubic-bezier(0.32, 0.72, 0, 1);     /* appearing */
+  --ease-in: cubic-bezier(0.55, 0, 1, 0.45);      /* leaving */
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1); /* moving on screen: camera, cursor */
+  --d-press: 150ms;   /* press feedback, hover */
+  --d-in: 300ms;      /* things appearing */
+  --d-exit: 220ms;    /* things leaving (~25% shorter) */
+  --d-move: 450ms;    /* camera, cursor travel */
+  --d-xfade: 400ms;   /* screenshot / sketch cross-fade */
+  --d-pulse: 500ms;   /* outline pulse on changed views */
+  --stag: 40ms;       /* stagger between identical siblings */
+  --stag-piece: 90ms; /* stagger between distinct pieces */
+  --chain: 300ms;     /* gap between chained pieces on the build slide */
+  /* interaction storyboard (forward step):
+       0ms            cursor travels to the control         (--d-move, ease-in-out)
+       --t-press      cursor dips to 0.96 + ripple ring     (--d-press / --d-xfade)
+       --t-swap       screenshot cross-fades to new state   (--d-xfade, ease-out)
+       --t-pulse      outline pulses on views that changed  (--d-pulse) */
+  --t-press: var(--d-move);
+  --t-swap: calc(var(--d-move) + var(--d-press));
+  --t-pulse: calc(var(--t-swap) + var(--d-xfade));
+}
 * { box-sizing: border-box; margin: 0; }
 html, body { height: 100%; overflow: hidden; background: var(--ink); }
 body { font-family: 'Inter', Arial, sans-serif; color: var(--ink); }
@@ -19,14 +42,16 @@ body { font-family: 'Inter', Arial, sans-serif; color: var(--ink); }
 /* slides: stacked, only .cur visible */
 section { position: absolute; inset: 0; background: var(--paper); font-size: 30px; line-height: 1.35;
   padding: 96px 128px 112px; display: flex; flex-direction: column; gap: 40px;
-  opacity: 0; visibility: hidden; transition: opacity .45s var(--ease), visibility 0s .45s; }
-section.cur { opacity: 1; visibility: visible; transition: opacity .45s var(--ease); }
+  opacity: 0; visibility: hidden; transition: opacity var(--d-exit) var(--ease-in), visibility 0s var(--d-exit); }
+section.cur { opacity: 1; visibility: visible; transition: opacity var(--d-in) var(--ease-out); }
 section.dark { background: var(--ink); color: var(--paper); }
 aside { display: none; }
 
-/* step reveal */
-[data-step] { transition: opacity .4s var(--ease), transform .4s var(--ease); }
-[data-step]:not(.on) { opacity: 0; transform: translateY(16px); pointer-events: none; }
+/* step reveal: enter ease-out (optionally after --delay), leave shorter + ease-in, no delay */
+[data-step] { transition: opacity var(--d-in) var(--ease-out) var(--delay, 0ms), transform var(--d-in) var(--ease-out) var(--delay, 0ms); }
+[data-step]:not(.on) { opacity: 0; transform: translateY(12px); pointer-events: none;
+  transition-duration: var(--d-exit); transition-timing-function: var(--ease-in); transition-delay: 0ms; }
+[data-step].fade:not(.on) { transform: none; } /* replacements: opacity only */
 
 h1, h2, h3 { font-family: 'Space Grotesk', Arial, sans-serif; line-height: 1.1; }
 h1 { font-size: 120px; font-weight: 700; letter-spacing: -2px; }
@@ -40,6 +65,8 @@ h3 { font-size: 40px; font-weight: 600; }
 .small { font-size: 24px; color: var(--soft); }
 .dark .small { color: var(--dsoft); }
 .spacer { flex: 1; }
+.stack { display: grid; }
+.stack > * { grid-area: 1 / 1; }
 a { color: inherit; }
 
 /* cover */
@@ -66,15 +93,13 @@ a { color: inherit; }
 section.split { padding: 0; flex-direction: row; gap: 0; }
 .cam { position: relative; width: 1000px; height: 1080px; flex: none; overflow: hidden; background: var(--tone); }
 .cam-in { position: absolute; left: 0; top: 0; width: 955px; height: 1280px; transform-origin: 0 0;
-  transition: transform .55s var(--ease); --cs: 1; }
+  transition: transform var(--d-move) var(--ease-in-out); --cs: 1; }
 .cam-in img { display: block; width: 955px; height: 1280px; }
 .hl { position: absolute; border: calc(5px / var(--cs)) solid var(--orange); border-radius: calc(8px / var(--cs));
-  box-shadow: 0 0 0 4000px rgba(20,33,61,.4); opacity: 0;
-  transition: opacity .4s var(--ease), left .55s var(--ease), top .55s var(--ease), width .55s var(--ease), height .55s var(--ease); }
-.hl.on { opacity: 1; }
+  box-shadow: 0 0 0 4000px rgba(20,33,61,.4); --delay: var(--d-move); } /* appears once the camera lands */
 .split-body { flex: 1; min-width: 0; padding: 96px 96px 112px 80px; display: flex; flex-direction: column; gap: 40px; }
-.pstack { flex: 1; display: grid; }
-.pstack > * { grid-area: 1 / 1; display: flex; flex-direction: column; gap: 28px; }
+.pstack { flex: 1; }
+.pstack > * { display: flex; flex-direction: column; gap: 28px; }
 .grid4 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .cell { background: var(--tone); border-radius: 12px; padding: 24px 32px; display: flex; flex-direction: column; gap: 4px; }
 .letter { font-family: 'Space Grotesk', Arial, sans-serif; font-size: 64px; font-weight: 700; line-height: 1; color: var(--orange); }
@@ -99,19 +124,47 @@ section.split { padding: 0; flex-direction: row; gap: 0; }
 .id { font-size: 24px; color: var(--soft); }
 .ops { display: flex; flex-direction: column; gap: 28px; }
 
-/* interactivity */
-.irow { display: flex; gap: 48px; align-items: flex-start; }
-.shot-panel { width: 1152px; flex: none; background: var(--tone); border-radius: 16px; padding: 24px; display: flex; flex-direction: column; gap: 16px; }
-.shot { position: relative; width: 1104px; height: 621px; }
-.shot img { display: block; width: 100%; height: 100%; border: 2px solid var(--line); }
-.ring { position: absolute; left: calc(var(--x) / 1920 * 100%); top: calc(var(--y) / 1080 * 100%);
-  width: calc(var(--w) / 1920 * 100%); height: calc(var(--h) / 1080 * 100%);
-  border: 4px solid var(--orange); border-radius: 10px; box-shadow: 0 0 0 3px rgba(255,255,255,.85), 0 0 0 4000px rgba(20,33,61,.18); }
-.ring + .ring { box-shadow: 0 0 0 3px rgba(255,255,255,.85); }
-.ilist { flex: 1; display: flex; flex-direction: column; gap: 16px; }
-.ilist .item { transition: opacity .4s var(--ease), transform .4s var(--ease), background .3s; border-radius: 0 10px 10px 0; padding: 8px 16px 8px 20px; }
-.ilist .item.on:not(.act) { opacity: .45; }
-.ilist .item.act { background: var(--tone); }
+/* bridge: sketch crop -> app panel, same 2x2 cell */
+section.bridge { padding: 72px 128px 64px; gap: 32px; }
+.b2x2 { display: grid; grid-template-columns: 713px 713px; grid-auto-rows: 350px; gap: 24px; align-self: center; }
+.bcell { position: relative; border-radius: 12px; overflow: hidden; background: var(--tone); border: 2px solid var(--line); }
+.crop { position: absolute; inset: 0; background-repeat: no-repeat; }
+.crop.app { transition-duration: var(--d-xfade); --delay: calc(var(--i) * var(--stag)); }
+.blabel { position: absolute; left: 12px; top: 12px; display: flex; align-items: baseline; gap: 10px;
+  background: var(--ink); color: var(--paper); border-radius: 10px; padding: 6px 16px 8px; }
+.blabel b { font-family: 'Space Grotesk', Arial, sans-serif; font-size: 36px; color: var(--orange); line-height: 1; }
+.blabel span { font-size: 24px; font-weight: 600; }
+
+/* interactivity, acted out on real captures */
+section.live { padding: 0; gap: 0; background: var(--tone); }
+.shotbox { position: relative; width: 1920px; height: 1080px; flex: none; transform-origin: 0 0;
+  transform: translateX(134px) scale(0.86); } /* 1651 x 929, centred */
+.shotbox img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.frame { transition-duration: var(--d-xfade); }
+.fwd .frame { --delay: var(--t-swap); }
+.cursor { position: absolute; left: 0; top: 0; z-index: 3; pointer-events: none;
+  transform: translate(calc(var(--cx, 960) * 1px), calc(var(--cy, 545) * 1px));
+  transition: transform var(--d-move) var(--ease-in-out); }
+.cin { display: block; width: 40px; height: 56px; transform-origin: 2px 2px; filter: drop-shadow(0 2px 3px rgba(0,0,0,.35)); }
+.fwd:not([data-hover]) .cin { animation: press-a var(--d-press) var(--ease-out) var(--t-press) both; }
+.fwd[data-odd]:not([data-hover]) .cin { animation-name: press-b; } /* new name each step restarts the press */
+@keyframes press-a { 50% { transform: scale(0.96); } }
+@keyframes press-b { 50% { transform: scale(0.96); } }
+.fx { position: absolute; pointer-events: none; opacity: 0; transition: none; }
+.ripple { width: 56px; height: 56px; margin: -28px 0 0 -28px; border: 4px solid var(--orange); border-radius: 50%; }
+.fwd .ripple.on { animation: ripple var(--d-xfade) var(--ease-out) var(--t-press) both; }
+@keyframes ripple { from { opacity: .9; transform: scale(0.95); } to { opacity: 0; transform: scale(1.8); } }
+.pulse { border: 5px solid var(--orange); border-radius: 14px; }
+.fwd .pulse.on { animation: pulse var(--d-pulse) var(--ease-out) var(--t-pulse) both; }
+@keyframes pulse { 40% { opacity: 1; } }
+.capstrip { flex: 1; display: flex; align-items: center; justify-content: space-between; padding: 0 134px; margin-top: -151px; }
+.capstrip .stack { flex: 1; }
+.capt { display: flex; flex-direction: column; gap: 6px; }
+.capt p:last-child { font-size: 30px; color: var(--soft); }
+.capt b { font-family: 'Space Grotesk', Arial, sans-serif; font-size: 40px; font-weight: 600; color: var(--ink); margin-right: 16px; }
+.dots { display: flex; gap: 12px; }
+.dots b { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--soft); position: relative; }
+.dots i { position: absolute; inset: 2px; border-radius: 50%; background: var(--orange); }
 
 /* demo */
 section.demo { padding: 0; gap: 0; }
@@ -122,23 +175,41 @@ section.demo { padding: 0; gap: 0; }
 .dframe img, .dframe iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
 .dframe img { object-fit: cover; object-position: top; }
 
+/* build pipeline */
+.pipe { display: flex; align-items: stretch; }
+.node { width: 372px; flex: none; background: var(--tone); border-radius: 16px; padding: 28px 30px; display: flex; flex-direction: column; gap: 10px; }
+.node .tag { margin-bottom: 2px; font-size: 24px; color: var(--violet); }
+.node h3 { font-size: 36px; }
+.node code { font-family: 'Space Grotesk', Arial, sans-serif; font-size: 32px; font-weight: 600; }
+.node p { font-size: 28px; color: var(--soft); line-height: 1.4; }
+.arrow { flex: 1; align-self: center; height: 6px; background: var(--orange); position: relative; margin: 0 10px 0 6px; transform-origin: 0 50%; }
+.arrow::after { content: ""; position: absolute; right: -12px; top: -9px; border: 12px solid transparent; border-left: 14px solid var(--orange); border-right: 0; }
+.arrow[data-step]:not(.on) { transform: scaleX(0); } /* drawn in from the left */
+.notes2 { display: flex; flex-direction: column; gap: 20px; }
+.notes2 .item p { font-size: 26px; color: var(--soft); }
+.notes2 .item b { color: var(--ink); }
+
 /* closing */
 .url { font-family: 'Space Grotesk', Arial, sans-serif; font-size: 60px; font-weight: 600; }
 .fq { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
 .fcard { background: #1F2E52; border-radius: 16px; padding: 28px 32px; border-top: 6px solid var(--orange); font-size: 30px; }
 
 /* chrome outside the stage */
-#ui { position: fixed; right: 12px; bottom: 10px; display: flex; align-items: center; gap: 6px; opacity: .35; transition: opacity .2s; font: 13px Inter, Arial, sans-serif; color: #fff; }
-#ui:hover { opacity: 1; }
+#ui { position: fixed; right: 12px; bottom: 10px; display: flex; align-items: center; gap: 6px; opacity: .35; transition: opacity var(--d-press) ease; font: 13px Inter, Arial, sans-serif; color: #fff; }
+@media (hover: hover) and (pointer: fine) { #ui:hover { opacity: 1; } }
 #ui button { background: var(--ink); color: #fff; border: 1px solid #fff5; border-radius: 6px; width: 30px; height: 26px; cursor: pointer; font-size: 14px; }
 #ui span { background: var(--ink); padding: 3px 8px; border-radius: 6px; }
-#bar { position: fixed; left: 0; bottom: 0; height: 3px; background: var(--orange); transition: width .3s var(--ease); }
+#bar { position: fixed; left: 0; bottom: 0; width: 100%; height: 3px; background: var(--orange); transform-origin: 0 50%; transform: scaleX(0); transition: transform var(--d-in) var(--ease-in-out); }
 #notes { position: fixed; left: 0; right: 0; bottom: 0; max-height: 40vh; overflow: auto; padding: 16px 24px 28px;
   background: rgba(20,33,61,.95); color: var(--paper); font: 18px/1.5 Inter, Arial, sans-serif; display: none; }
 body.notes #notes { display: block; }
 body.notes #ui { bottom: calc(10px + var(--nh, 0px)); }
 
-@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } [data-step]:not(.on) { transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+  [data-step]:not(.on) { transform: none; }
+  .arrow[data-step]:not(.on) { transform: scaleX(0); }
+}
 </style>
 </head>
 <body>
@@ -159,7 +230,7 @@ body.notes #ui { bottom: calc(10px + var(--nh, 0px)); }
     <div><p class="who">Maksym Konshyn</p><p class="uco">595740</p></div>
     <div><p class="who">Nikita Dakhno</p><p class="uco">599440</p></div>
   </div>
-  <aside>Hi, we’re Lada, Maksym and Nikita from seminar group five. Our project is the NYC Arrests Explorer: twenty years of NYPD arrest records — who gets arrested, for what, where and when. We’ll go through the data, our final design sheet, the design choices and interactions, and where the implementation stands.</aside>
+  <aside>Hi, we’re Lada, Maksym and Nikita from seminar group five. Our project is the NYC Arrests Explorer: twenty years of NYPD arrest records — who gets arrested, for what, where and when.</aside>
 </section>
 
 <!-- 2 · topic & data -->
@@ -183,16 +254,16 @@ body.notes #ui { bottom: calc(10px + var(--nh, 0px)); }
     <p class="caveat2">2025: sex and age are missing for ~53% of records, so demographic views default to 2024.</p>
   </div>
   <p class="small">Source: NYPD Arrests Data (Historic), NYC Open Data</p>
-  <aside>Our data is the NYPD Arrests Data, historic, from NYC Open Data: about 6.3 million arrests from 2006 to 2025, across 78 precincts and 77 offense categories. Arrests fell a lot over that time, from about 422 thousand a year in 2010 to about 140 thousand in 2020. The tool answers four questions: who gets arrested, by sex, race and age against charge severity; what the most common offenses are per precinct and year; where there are unusually many arrests; and when, meaning the trend and seasonality. One caveat we keep in the tool too: arrests record police activity, not crimes committed. And one data issue: in 2025 sex and age are missing for about 53 percent of records, so the demographic views default to 2024.</aside>
+  <aside>NYPD Arrests Data from NYC Open Data. [→] About 6.3 million arrests, 2006 to 2025, 78 precincts, 77 offense categories; arrests fell from about 422 thousand a year in 2010 to 140 thousand in 2020. [→] Four questions: who, what, where, when. [→] Two caveats: arrests record police activity, not crime; and 2025 lacks sex and age for about half the records, so demographic views default to 2024.</aside>
 </section>
 
 <!-- 3 · design sheet walk-through (camera) -->
 <section class="split" data-steps="6" id="sheet">
-  <div class="cam"><div class="cam-in"><img src="img/sheet.jpg" alt="Hand-drawn Design Sheet 5: a 2×2 dashboard with a precinct map, a precinct detail panel, waffle charts and a calendar heatmap, plus focus, operations and detail notes"><div class="hl"></div></div></div>
+  <div class="cam"><div class="cam-in"><img src="img/sheet.jpg" alt="Hand-drawn Design Sheet 5: a 2×2 dashboard with a precinct map, a precinct detail panel, waffle charts and a calendar heatmap, plus focus, operations and detail notes"></div></div>
   <div class="split-body">
     <div class="head"><p class="eyebrow">02 · Final design sheet</p><h2>Design Sheet 5</h2></div>
-    <div class="pstack">
-      <div data-step="0" data-until="0">
+    <div class="pstack stack">
+      <div class="fade" data-step="0" data-until="0">
         <p class="lead">Our combined design: one 2×2 dashboard, one view per question.</p>
         <div class="grid4">
           <div class="cell"><p class="letter">A</p><p class="cell-t">Map</p><p class="cell-s">Where</p></div>
@@ -201,7 +272,7 @@ body.notes #ui { bottom: calc(10px + var(--nh, 0px)); }
           <div class="cell"><p class="letter">D</p><p class="cell-t">Calendar</p><p class="cell-s">When</p></div>
         </div>
       </div>
-      <div data-step="1" data-until="1">
+      <div class="fade" data-step="1" data-until="1">
         <div class="vhead"><p class="letter">A</p><h2>Map</h2></div>
         <p class="vq"><b>Where</b> — precincts with unusually many arrests</p>
         <div class="dcard">
@@ -209,7 +280,7 @@ body.notes #ui { bottom: calc(10px + var(--nh, 0px)); }
           <p class="dline"><span class="tag">Why</span>Count or per 10k residents, so big precincts don’t dominate</p>
         </div>
       </div>
-      <div data-step="2" data-until="2">
+      <div class="fade" data-step="2" data-until="2">
         <div class="vhead"><p class="letter">B</p><h2>Precinct detail</h2></div>
         <p class="vq"><b>What</b> — most common offenses per precinct and year</p>
         <div class="dcard">
@@ -217,7 +288,7 @@ body.notes #ui { bottom: calc(10px + var(--nh, 0px)); }
           <p class="dline"><span class="tag">Why</span>Ranking, trend and mix of one precinct side by side</p>
         </div>
       </div>
-      <div data-step="3" data-until="3">
+      <div class="fade" data-step="3" data-until="3">
         <div class="vhead"><p class="letter">C</p><h2>Waffles</h2></div>
         <p class="vq"><b>Who</b> — sex, race and age vs. charge severity</p>
         <div class="dcard">
@@ -225,7 +296,7 @@ body.notes #ui { bottom: calc(10px + var(--nh, 0px)); }
           <p class="dline"><span class="tag">Why</span>Shares are countable and comparable across severities</p>
         </div>
       </div>
-      <div data-step="4" data-until="4">
+      <div class="fade" data-step="4" data-until="4">
         <div class="vhead"><p class="letter">D</p><h2>Calendar</h2></div>
         <p class="vq"><b>When</b> — long-term trend and seasonality</p>
         <div class="dcard">
@@ -233,7 +304,7 @@ body.notes #ui { bottom: calc(10px + var(--nh, 0px)); }
           <p class="dline"><span class="tag">Why</span>Separates the overall level from seasonality</p>
         </div>
       </div>
-      <div data-step="5" data-until="5">
+      <div class="fade" data-step="5" data-until="5">
         <h3>Operations</h3>
         <div class="ops">
           <div class="item"><p class="it">Linked filtering</p><p class="id">Click a precinct in A — B, C and D follow</p></div>
@@ -242,7 +313,7 @@ body.notes #ui { bottom: calc(10px + var(--nh, 0px)); }
           <div class="item"><p class="it">Abs / %</p><p class="id">Calendar in raw counts or row-normalised shares</p></div>
         </div>
       </div>
-      <div data-step="6">
+      <div class="fade" data-step="6">
         <p class="lead">One 2×2 dashboard, one view per question.</p>
         <div class="grid4">
           <div class="cell"><p class="letter">A</p><p class="cell-t">Map</p><p class="cell-s">Where</p></div>
@@ -260,46 +331,91 @@ body.notes #ui { bottom: calc(10px + var(--nh, 0px)); }
       </div>
     </div>
   </div>
-  <aside>This is our final design, Design Sheet 5: one dashboard on a 2 by 2 grid. [→] View A, the precinct map — the where: a choropleth, switchable to a heat map or donut clusters, in raw counts or per ten thousand residents so big precincts don’t dominate. [→] View B, the precinct detail panel — what gets charged: top offenses as sorted bars, the trend as a line, the severity mix as one bar. [→] View C, waffles for who is arrested: ten by ten, one figure per percent, so shares can be counted and compared. [→] View D, the calendar heatmap for when: weekday by month, absolute or percent. [→] The operations: clicking a precinct filters the other views, layer switching, count versus per 10k, absolute versus percent. [→] And severity keeps the same three colours in every view; magnitude is always a single-hue ramp.</aside>
+  <aside>Our final design, Design Sheet 5: one 2×2 dashboard. [→] A, the map — where: choropleth, heat or donuts, count or per 10k. [→] B, precinct detail — what: sorted bars, trend line, severity mix. [→] C, waffles — who: one figure per percent. [→] D, calendar — when: weekday by month, absolute or percent. [→] Operations: click a precinct and the rest follow, layer switch, per 10k, abs/%. [→] Severity keeps the same three colours everywhere; magnitude is one hue.</aside>
 </section>
 
-<!-- 4 · interactivity -->
-<section data-steps="6" style="padding:72px 72px 0; gap:36px">
-  <div class="head"><p class="eyebrow">03 · Interactivity</p><h2>Linked views, driven by clicks</h2></div>
-  <div class="irow">
-    <div class="shot-panel">
-      <div class="shot">
-        <img src="img/precinct75.png" alt="The live dashboard with Precinct 75, Brooklyn, selected for 2010 and Dangerous Drugs (Misdemeanor): the map outlines the precinct and the offense bars, waffles and calendar all show that precinct">
-        <div class="ring" data-step="1" data-until="1" style="--x:446;--y:12;--w:366;--h:40"></div>
-        <div class="ring" data-step="2" data-until="2" style="--x:874;--y:13;--w:272;--h:38"></div>
-        <div class="ring" data-step="3" data-until="3" style="--x:516;--y:330;--w:82;--h:90"></div>
-        <div class="ring" data-step="4" data-until="4" style="--x:332;--y:618;--w:306;--h:308"></div>
-        <div class="ring" data-step="4" data-until="4" style="--x:994;--y:622;--w:46;--h:304"></div>
-        <div class="ring" data-step="5" data-until="5" style="--x:600;--y:85;--w:346;--h:34"></div>
-        <div class="ring" data-step="5" data-until="5" style="--x:1650;--y:558;--w:90;--h:34"></div>
-      </div>
-      <p class="small">Precinct 75 selected: the offense bars, waffles and calendar all follow.</p>
-    </div>
-    <div class="ilist">
-      <div class="item" data-step="1" data-active="1"><p class="it">Year slider + play</p><p class="id">Step or animate through 2006–2025</p></div>
-      <div class="item" data-step="2" data-active="2"><p class="it">Offense filter</p><p class="id">Narrow every view to one category</p></div>
-      <div class="item" data-step="3" data-active="3"><p class="it">Click a precinct</p><p class="id">All views follow that precinct</p></div>
-      <div class="item" data-step="4" data-active="4"><p class="it">Click a cohort or weekday</p><p class="id">Cross-filters the other views</p></div>
-      <div class="item" data-step="5" data-active="5"><p class="it">Toggles</p><p class="id">Map layer · count / per 10k · abs / %</p></div>
-      <div class="item" data-step="6" data-active="6"><p class="it">Tooltips everywhere</p><p class="id">Exact values on every mark</p></div>
+<!-- 4 · bridge: sketch -> built -->
+<section class="bridge" data-steps="1">
+  <div class="head">
+    <p class="eyebrow">03 · From sketch to working version</p>
+    <div class="stack">
+      <h2 class="fade" data-step="0" data-until="0">The sketch: four views, A–D</h2>
+      <h2 class="fade" data-step="1">…and it is already built</h2>
     </div>
   </div>
-  <aside>All four views are linked. [→] A year slider with a play button steps through 2006 to 2025, [→] and an offense filter narrows everything to one category. [→] Clicking a precinct on the map makes every other view follow it — here precinct 75 in Brooklyn. [→] Clicking a cohort in the waffles, or a weekday in the calendar, cross-filters the other views. [→] Toggles switch the map layer, count versus per ten thousand, and absolute versus percent in the calendar. [→] And there are tooltips on every mark for exact numbers.</aside>
+  <div class="b2x2">
+    <div class="bcell"><div class="crop" data-img="sheet" data-r="35,175,435,275"></div><div class="crop app fade" data-step="1" data-img="app" data-r="16,78,938,460" style="--i:0"></div><p class="blabel"><b>A</b><span>Map</span></p></div>
+    <div class="bcell"><div class="crop" data-img="sheet" data-r="465,212,485,205"></div><div class="crop app fade" data-step="1" data-img="app" data-r="966,78,938,460" style="--i:1"></div><p class="blabel"><b>B</b><span>Precinct detail</span></p></div>
+    <div class="bcell"><div class="crop" data-img="sheet" data-r="30,448,445,210"></div><div class="crop app fade" data-step="1" data-img="app" data-r="16,550,938,460" style="--i:2"></div><p class="blabel"><b>C</b><span>Waffles</span></p></div>
+    <div class="bcell"><div class="crop" data-img="sheet" data-r="470,418,480,245"></div><div class="crop app fade" data-step="1" data-img="app" data-r="966,550,938,460" style="--i:3"></div><p class="blabel"><b>D</b><span>Calendar</span></p></div>
+  </div>
+  <aside>The sheet’s layout block is a 2×2: map, detail, waffles, calendar. [→] And that is exactly what we built — same four views in the same positions, all implemented and linked.</aside>
 </section>
 
-<!-- 5 · live demo -->
+<!-- 5 · interactivity, acted out -->
+<section class="live" data-steps="7" id="live">
+  <div class="shotbox">
+    <img src="img/s0.jpg" alt="The dashboard citywide, 2024, all offenses">
+    <img class="frame fade" data-step="1" src="img/s1.jpg" alt="Year set to 2010">
+    <img class="frame fade" data-step="2" src="img/s2.jpg" alt="Offense filter: Dangerous Drugs (Misdemeanor)">
+    <img class="frame fade" data-step="3" src="img/s3.jpg" alt="Precinct 75, Brooklyn, selected">
+    <img class="frame fade" data-step="4" src="img/s4.jpg" alt="Cross-filter: Sex Female">
+    <img class="frame fade" data-step="5" src="img/s5.jpg" alt="Map in arrests per 10k residents">
+    <img class="frame fade" data-step="6" src="img/s6.jpg" alt="Calendar in % deviation from the mean">
+    <img class="frame fade" data-step="7" src="img/s7.jpg" alt="Tooltip on a calendar cell">
+    <!-- outline pulses on the views that react (B, C, D after the precinct click; A, B, D after the cohort click) -->
+    <div class="fx pulse" data-step="3" data-until="3" style="left:966px;top:78px;width:938px;height:460px"></div>
+    <div class="fx pulse" data-step="3" data-until="3" style="left:16px;top:550px;width:938px;height:460px"></div>
+    <div class="fx pulse" data-step="3" data-until="3" style="left:966px;top:550px;width:938px;height:460px"></div>
+    <div class="fx pulse" data-step="4" data-until="4" style="left:16px;top:78px;width:938px;height:460px"></div>
+    <div class="fx pulse" data-step="4" data-until="4" style="left:966px;top:78px;width:938px;height:460px"></div>
+    <div class="fx pulse" data-step="4" data-until="4" style="left:966px;top:550px;width:938px;height:460px"></div>
+    <div class="cursor"><svg class="cin" viewBox="0 0 20 28" aria-hidden="true"><path d="M2 2 L2 23 L7.5 18 L11 26 L14.5 24.5 L11 16.8 L18 16.8 Z" fill="#14213D" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg></div>
+  </div>
+  <div class="capstrip">
+    <div class="stack">
+      <div class="capt fade" data-step="0" data-until="0"><p class="eyebrow">04 · Interactivity</p><p><b>Linked views, driven by clicks</b>every view filters the others</p></div>
+      <div class="capt fade" data-step="1" data-until="1"><p class="eyebrow">Year slider + play</p><p><b>2024 → 2010</b>step or animate through 2006–2025</p></div>
+      <div class="capt fade" data-step="2" data-until="2"><p class="eyebrow">Offense filter</p><p><b>Dangerous Drugs (Misd.)</b>every view narrows to one category</p></div>
+      <div class="capt fade" data-step="3" data-until="3"><p class="eyebrow">Click a precinct</p><p><b>Precinct 75, Brooklyn</b>detail, waffles and calendar follow</p></div>
+      <div class="capt fade" data-step="4" data-until="4"><p class="eyebrow">Click a cohort</p><p><b>Sex: Female</b>cross-filters the map, detail and calendar</p></div>
+      <div class="capt fade" data-step="5" data-until="5"><p class="eyebrow">Toggle</p><p><b>Count → per 10k</b>map normalised by population</p></div>
+      <div class="capt fade" data-step="6" data-until="6"><p class="eyebrow">Toggle</p><p><b>Abs → %</b>calendar as deviation from the mean</p></div>
+      <div class="capt fade" data-step="7" data-until="7"><p class="eyebrow">Tooltips everywhere</p><p><b>Hover any mark</b>exact values on every mark</p></div>
+    </div>
+    <div class="dots" aria-hidden="true"><b><i class="fade" data-step="1"></i></b><b><i class="fade" data-step="2"></i></b><b><i class="fade" data-step="3"></i></b><b><i class="fade" data-step="4"></i></b><b><i class="fade" data-step="5"></i></b><b><i class="fade" data-step="6"></i></b><b><i class="fade" data-step="7"></i></b></div>
+  </div>
+  <aside>The real app, step by step — every state is a capture. [→] Year back to 2010. [→] Filter to misdemeanor drug arrests. [→] Click precinct 75 in Brooklyn: detail, waffles and calendar follow. [→] Click the female cohort: map, detail and calendar are cross-filtered. [→] Per 10k residents on the map. [→] Calendar as percent deviation. [→] And tooltips with exact numbers on every mark.</aside>
+</section>
+
+<!-- 6 · live demo -->
 <section class="demo" data-steps="0" id="demo">
-  <div class="dbar"><h3>We have a working version</h3><a href="https://mavakon.github.io/nypd-arrests-explorer/" target="_blank" rel="noopener">mavakon.github.io/nypd-arrests-explorer</a></div>
-  <div class="dframe"><img src="img/overview.png" alt="The full live dashboard: map, offense bars and trend, waffle charts and calendar heatmap"><iframe title="NYC Arrests Explorer, live"></iframe></div>
-  <aside>The unusual part: we already have a working version. All four views from the design sheet and the interactions between them are implemented, and it is online. Demo, 30 seconds: pick a precinct, then click a cohort in the waffles, and show how the other views follow. Click inside the app to use it; PageDown / PageUp still move the slides. If asked how: a static site built with D3 and Leaflet; the report and the video are what remain.</aside>
+  <div class="dbar"><h3>Try it live</h3><a href="https://mavakon.github.io/nypd-arrests-explorer/" target="_blank" rel="noopener">mavakon.github.io/nypd-arrests-explorer</a></div>
+  <div class="dframe"><img src="img/s0.jpg" alt="The full live dashboard: map, offense bars and trend, waffle charts and calendar heatmap"><iframe title="NYC Arrests Explorer, live"></iframe></div>
+  <aside>Optional, if time: 30 seconds in the live app — pick a precinct, click a cohort. Click inside the app to use it; PageDown / PageUp still move the slides.</aside>
 </section>
 
-<!-- 6 · closing -->
+<!-- 7 · how it is built -->
+<section data-steps="2" style="gap:48px">
+  <div class="head"><p class="eyebrow">05 · Implementation</p><h2>How it is built</h2></div>
+  <div class="pipe">
+    <div class="node"><p class="tag">Source</p><h3>NYC Open Data API</h3><p>NYPD Arrests Data (Historic): 6,264,978 rows, 2006–2025</p></div>
+    <i class="arrow" data-step="1"></i>
+    <div class="node" data-step="1" style="--delay:var(--chain)"><p class="tag">Build script</p><code>prep/build_data.py</code><p>Python. Aggregates server-side with SoQL — raw rows never downloaded. Responses cached, totals reconciled.</p></div>
+    <i class="arrow" data-step="1" style="--delay:calc(2 * var(--chain))"></i>
+    <div class="node" data-step="1" style="--delay:calc(3 * var(--chain))"><p class="tag">Output</p><h3>Static JSON</h3><p>Count cube, calendar, demographics, per-precinct and cross-filter files, precinct GeoJSON</p></div>
+    <i class="arrow" data-step="2"></i>
+    <div class="node" data-step="2" style="--delay:var(--chain)"><p class="tag">Browser</p><h3>D3 + Leaflet</h3><p>No server: static files hosted on GitHub Pages</p></div>
+  </div>
+  <div class="notes2">
+    <div class="item" data-step="2" style="--delay:calc(2 * var(--chain))"><p><b>Checks:</b> precinct cube 6,264,974 + 4 arrests in precincts without a polygon = 6,264,978. The 7,116 rows without usable coordinates are missing only from the heat layer.</p></div>
+    <div class="item" data-step="2" style="--delay:calc(2 * var(--chain) + var(--stag-piece))"><p><b>Changed from the sheet:</b> it planned Python + Dash + Plotly; we built a static D3 + Leaflet site — no server to host or keep running.</p></div>
+    <div class="item" data-step="2" style="--delay:calc(2 * var(--chain) + 2 * var(--stag-piece))"><p><b>Remaining:</b> report and video.</p></div>
+  </div>
+  <aside>How it is built. The source is the NYC Open Data API, 6.3 million rows. [→] A Python script aggregates on the server with SoQL, so we never download the raw rows; it caches responses and checks totals; the output is static JSON. [→] The browser does the rest with D3 and Leaflet, no server, on GitHub Pages. Totals reconcile to the row; one change from the sheet: Dash became a static site. What remains is the report and the video.</aside>
+</section>
+
+<!-- 8 · closing -->
 <section class="dark" data-steps="3">
   <div class="head"><p class="eyebrow">Try it live</p><p class="url"><a href="https://mavakon.github.io/nypd-arrests-explorer/" target="_blank" rel="noopener">mavakon.github.io/nypd-arrests-explorer</a></p></div>
   <div class="spacer"></div>
@@ -311,7 +427,7 @@ body.notes #ui { bottom: calc(10px + var(--nh, 0px)); }
   </div>
   <div class="spacer"></div>
   <p class="small">Lada Spektorovska · Maksym Konshyn · Nikita Dakhno — PV251, seminar group 5</p>
-  <aside>The site is at mavakon.github.io/nypd-arrests-explorer, so you can try it yourselves. We’d really like your feedback, especially on three things: [→] is the cross-filtering discoverable without being told? [→] Are the waffles still readable when a group is small? [→] And is anything confusing about the calendar’s percent mode? Thank you.</aside>
+  <aside>Try it yourselves at this address. We’d like feedback on three things: [→] is the cross-filtering discoverable? [→] Are the waffles readable for small groups? [→] Is the calendar’s percent mode clear? Thank you.</aside>
 </section>
 
 </div>
@@ -323,18 +439,43 @@ body.notes #ui { bottom: calc(10px + var(--nh, 0px)); }
 const secs = [...document.querySelectorAll('section')];
 const steps = secs.map(s => +s.dataset.steps);
 const total = steps.reduce((a, n) => a + n + 1, 0);
-// sheet camera stops [x, y, w, h] in sheet.jpg pixels (955×1280); null = whole sheet
-const CAM = [null, [35,175,435,275], [465,212,485,205], [30,448,445,210], [470,418,480,245], [615,658,340,330,745], null]; // 5th value: camera centre-y override (keeps '4. DETAIL' out of frame)
-let cur = 0, step = 0;
+// sheet camera stops [x, y, w, h(, centre-y)] in sheet.jpg px (955×1280); null = whole sheet.
+// 5th value keeps the '4. DETAIL' block out of frame on the operations stop.
+const CAM = [null, [35,175,435,275], [465,212,485,205], [30,448,445,210], [470,418,480,245], [615,658,340,325,755], null];
+// cursor targets per interactivity step, measured in the 1920×1080 captures (step 0 = resting spot)
+const CUR = [[960,545], [576,32], [1010,32], [553,368], [611,905], [908,102], [1716,574], [1200,732]];
+const HOVER = 7; // tooltip step: hover only, no press
+const IMG = { sheet: ['img/sheet.jpg', 955, 1280], app: ['img/s0.jpg', 1920, 1080] };
+let cur = 0, step = 0, fwd = false;
+
+// one highlight box per camera stop, riding inside the camera (only opacity animates)
+const camIn = document.querySelector('.cam-in');
+CAM.forEach((r, i) => { if (!r) return;
+  const d = Object.assign(document.createElement('div'), { className: 'hl fade' });
+  Object.assign(d.dataset, { step: i, until: i });
+  Object.assign(d.style, { left: r[0] + 'px', top: r[1] + 'px', width: r[2] + 'px', height: r[3] + 'px' });
+  camIn.append(d); });
+// one ripple per pressed control
+const shotbox = document.querySelector('.shotbox');
+CUR.forEach(([x, y], i) => { if (!i || i === HOVER) return;
+  const d = Object.assign(document.createElement('div'), { className: 'fx ripple' });
+  Object.assign(d.dataset, { step: i, until: i });
+  Object.assign(d.style, { left: x + 'px', top: y + 'px' });
+  shotbox.insertBefore(d, shotbox.querySelector('.cursor')); });
+// crops: fit rect [x,y,w,h] of an image into its cell (contain for the sketch, the app panels match the cell)
+document.querySelectorAll('.crop').forEach(c => {
+  const [src, W, H] = IMG[c.dataset.img], [x, y, w, h] = c.dataset.r.split(',').map(Number);
+  const cw = c.parentElement.clientWidth, ch = c.parentElement.clientHeight, k = Math.min(cw / w, ch / h);
+  Object.assign(c.style, { backgroundImage: `url(${src})`, backgroundSize: `${W * k}px ${H * k}px`,
+    backgroundPosition: `${(cw - w * k) / 2 - x * k}px ${(ch - h * k) / 2 - y * k}px` });
+});
 
 function camera(r) {
-  const view = document.querySelector('.cam'), inner = view.firstElementChild, hl = inner.querySelector('.hl');
+  const view = camIn.parentElement;
   const [x, y, w, h, cy = y + h / 2] = r || [0, 0, 955, 1280];
   const s = Math.min(Math.min(view.clientWidth / w, view.clientHeight / h) * (r ? 0.86 : 0.94), 2.3);
-  inner.style.transform = `translate(${view.clientWidth / 2 - (x + w / 2) * s}px,${view.clientHeight / 2 - cy * s}px) scale(${s})`;
-  inner.style.setProperty('--cs', s);
-  hl.classList.toggle('on', !!r);
-  if (r) Object.assign(hl.style, { left: x + 'px', top: y + 'px', width: w + 'px', height: h + 'px' });
+  camIn.style.transform = `translate(${view.clientWidth / 2 - (x + w / 2) * s}px,${view.clientHeight / 2 - cy * s}px) scale(${s})`;
+  camIn.style.setProperty('--cs', s);
 }
 
 function demo(on) {
@@ -349,24 +490,29 @@ function demo(on) {
 function apply() {
   secs.forEach((s, i) => s.classList.toggle('cur', i === cur));
   const s = secs[cur];
+  s.classList.toggle('fwd', fwd); // press/ripple/delayed cross-fade play only when stepping forward
   s.querySelectorAll('[data-step]').forEach(e => e.classList.toggle('on',
     step >= +e.dataset.step && (e.dataset.until == null || step <= +e.dataset.until)));
-  s.querySelectorAll('[data-active]').forEach(e => e.classList.toggle('act', step === +e.dataset.active));
   if (s.id === 'sheet') camera(CAM[step]);
+  if (s.id === 'live') {
+    s.style.setProperty('--cx', CUR[step][0]); s.style.setProperty('--cy', CUR[step][1]);
+    s.toggleAttribute('data-odd', step % 2 === 1); s.toggleAttribute('data-hover', step === HOVER);
+  }
   demo(s.id === 'demo');
   history.replaceState(null, '', `#${cur + 1}.${step}`);
   const done = steps.slice(0, cur).reduce((a, n) => a + n + 1, 0) + step + 1;
-  document.getElementById('bar').style.width = (done / total * 100) + '%';
+  document.getElementById('bar').style.transform = `scaleX(${done / total})`;
   document.getElementById('count').textContent = `${cur + 1} / ${secs.length}`;
   document.getElementById('notes').textContent = s.querySelector('aside')?.textContent || '';
 }
 
 function go(d) {
+  fwd = d > 0;
   if (d > 0) { if (step < steps[cur]) step++; else if (cur < secs.length - 1) { cur++; step = 0; } }
   else { if (step > 0) step--; else if (cur > 0) { cur--; step = steps[cur]; } }
   apply();
 }
-function jump(c, st) { cur = Math.max(0, Math.min(secs.length - 1, c)); step = Math.max(0, Math.min(steps[cur], st)); apply(); }
+function jump(c, st) { fwd = false; cur = Math.max(0, Math.min(secs.length - 1, c)); step = Math.max(0, Math.min(steps[cur], st)); apply(); }
 
 document.addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
