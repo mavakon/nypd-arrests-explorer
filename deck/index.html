@@ -11,15 +11,20 @@
 :root {
   --ink:#14213D; --paper:#FBFBF8; --tone:#F0EEE7; --soft:#4A5568; --dsoft:#C9CFDB; --line:#D8D4C8;
   --orange:#eb6834; --violet:#6250d6; --aqua:#1baf7a; --s:1;
+  /* schematic series colours (text never uses them) */
+  --map:#1F4E9C;      /* magnitude: one hue, light -> dark via opacity */
+  --cal:#B3364A;      /* calendar magnitude / positive deviation */
+  --cal-neg:#2F6DB5;  /* calendar negative deviation */
+  --male:#8A9BB8; --female:#D9559A;
   /* motion tokens: every transition/animation below uses these */
   --ease-out: cubic-bezier(0.32, 0.72, 0, 1);     /* appearing */
   --ease-in: cubic-bezier(0.55, 0, 1, 0.45);      /* leaving */
-  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1); /* moving on screen: camera, cursor */
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1); /* moving on screen: camera, cursor, state changes */
   --d-press: 150ms;   /* press feedback, hover */
   --d-in: 300ms;      /* things appearing */
   --d-exit: 220ms;    /* things leaving (~25% shorter) */
   --d-move: 450ms;    /* camera, cursor travel */
-  --d-xfade: 400ms;   /* screenshot / sketch cross-fade */
+  --d-xfade: 400ms;   /* sketch / schematic cross-fades and state changes */
   --dim: 0.5;         /* spotlight scrim: ink at 50% */
   --stag: 40ms;       /* stagger between identical siblings */
   --stag-piece: 90ms; /* stagger between distinct pieces */
@@ -28,7 +33,7 @@
        0ms            cursor travels to the control         (--d-move, ease-in-out)
        --t-press      cursor dips to 0.96 + ripple ring     (--d-press / --d-xfade)
        0ms → --t-swap spotlight hole on the control being used
-       --t-swap       screenshot cross-fades to new state   (--d-xfade, ease-out)
+       --t-swap       schematic changes state               (--d-xfade, ease-in-out)
                       and the hole cross-fades to the views that changed (rest state) */
   --t-press: var(--d-move);
   --t-swap: calc(var(--d-move) + var(--d-press));
@@ -124,27 +129,51 @@ section.split { padding: 0; flex-direction: row; gap: 0; }
 .id { font-size: 24px; color: var(--soft); }
 .ops { display: flex; flex-direction: column; gap: 28px; }
 
-/* bridge: sketch crop -> app panel, same 2x2 cell */
-section.bridge { padding: 72px 128px 64px; gap: 32px; }
-.b2x2 { display: grid; grid-template-columns: 713px 713px; grid-auto-rows: 350px; gap: 24px; align-self: center; }
+/* schematic dashboard (drawn by buildDash() in the script) */
+.dash { display: block; overflow: visible; }
+.dash text { font-family: 'Inter', Arial, sans-serif; font-size: 26px; fill: var(--soft); }
+.dash .ptitle { font-family: 'Space Grotesk', Arial, sans-serif; font-size: 30px; font-weight: 700; fill: var(--ink); }
+.dash .strong { fill: var(--ink); font-weight: 600; }
+.dash .big { font-family: 'Space Grotesk', Arial, sans-serif; font-size: 34px; font-weight: 700; fill: var(--ink); }
+.dash .on-ink { fill: var(--paper); font-weight: 600; }
+.dash .panel { fill: var(--paper); stroke: var(--line); stroke-width: 2; }
+/* continuous values (opacity / transform) set per step in setDash(); they change with the cross-fade */
+.vv { transition: opacity var(--d-xfade) var(--ease-in-out), transform var(--d-xfade) var(--ease-in-out); }
+.fwd .vv { transition-delay: var(--t-swap); }
+.bar { transform-box: fill-box; transform-origin: 0 50%; }
+.dash .dnum { font-family: 'Space Grotesk', Arial, sans-serif; font-size: 22px; font-weight: 700; fill: var(--ink); }
+/* discrete swaps (labels, chips, toggles, outlines): symmetric cross-fade, after the press when stepping forward */
+.var, .var:not(.on) { transition-duration: var(--d-xfade); transition-timing-function: var(--ease-in-out); }
+.fwd .var { --delay: var(--t-swap); }
+.fwd .var:not(.on) { transition-delay: var(--t-swap); }
+.note-ill { font-size: 24px; color: var(--soft); }
+
+/* bridge: sketch crop -> schematic panel, same 2x2 cell */
+section.bridge { padding: 72px 128px 56px; gap: 28px; }
+.b2x2 { display: grid; grid-template-columns: 760px 760px; grid-auto-rows: 332px; gap: 24px; align-self: center; }
 .bcell { position: relative; border-radius: 12px; overflow: hidden; background: var(--tone); border: 2px solid var(--line); }
 .crop { position: absolute; inset: 0; background-repeat: no-repeat; }
-.crop.app { transition-duration: var(--d-xfade); --delay: calc(var(--i) * var(--stag)); }
+.schem { position: absolute; inset: 0; background: var(--paper); transition-duration: var(--d-xfade); --delay: calc(var(--i) * var(--stag)); }
+.schem svg { width: 100%; height: 100%; }
 .blabel { position: absolute; left: 12px; top: 12px; display: flex; align-items: baseline; gap: 10px;
   background: var(--ink); color: var(--paper); border-radius: 10px; padding: 6px 16px 8px; }
 .blabel b { font-family: 'Space Grotesk', Arial, sans-serif; font-size: 36px; color: var(--orange); line-height: 1; }
 .blabel span { font-size: 24px; font-weight: 600; }
+.bfoot { display: flex; justify-content: flex-end; width: 1544px; align-self: center; }
 
-/* interactivity, acted out on real captures */
+/* interactivity, acted out on the schematic */
 section.live { padding: 0; gap: 0; background: var(--tone); }
-.shotbox { position: relative; width: 1920px; height: 1080px; flex: none; transform-origin: 0 0;
-  transform: translateX(134px) scale(0.86); } /* 1651 x 929, centred */
-.shotbox img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-.frame { transition-duration: var(--d-xfade); }
-.fwd .frame { --delay: var(--t-swap); }
+.dashbox { position: relative; width: 1728px; height: 860px; margin: 36px 96px 0; flex: none; overflow: hidden; }
+/* focus zoom: the schematic's own camera; zooming in waits for the press, zooming out starts at once */
+.dcam { position: absolute; inset: 0; transform-origin: 0 0; transition: transform var(--d-move) var(--ease-in-out); }
+.fwd[data-zoom] .dcam { transition-delay: var(--t-swap); }
+.live[data-zoom] .scrim.on { opacity: 0; } /* the zoom is the focus: no scrim */
+.fwd[data-zoom] .scrim { transition-delay: var(--t-swap); }
 .cursor { position: absolute; left: 0; top: 0; z-index: 3; pointer-events: none;
-  transform: translate(calc(var(--cx, 960) * 1px), calc(var(--cy, 545) * 1px));
-  transition: transform var(--d-move) var(--ease-in-out); }
+  transform: translate(calc(var(--cx, 110) * 1px), calc(var(--cy, 300) * 1px));
+  transition: transform var(--d-move) var(--ease-in-out), opacity var(--d-in) var(--ease-out); }
+.live[data-zoom] .cursor { opacity: 0; }
+.fwd[data-zoom] .cursor { transition-delay: 0ms, var(--t-swap); }
 .cin { display: block; width: 40px; height: 56px; transform-origin: 2px 2px; filter: drop-shadow(0 2px 3px rgba(0,0,0,.35)); }
 .fwd:not([data-hover]) .cin { animation: press-a var(--d-press) var(--ease-out) var(--t-press) both; }
 .fwd[data-odd]:not([data-hover]) .cin { animation-name: press-b; } /* new name each step restarts the press */
@@ -154,51 +183,41 @@ section.live { padding: 0; gap: 0; background: var(--tone); }
 .ripple { width: 56px; height: 56px; margin: -28px 0 0 -28px; border: 4px solid var(--orange); border-radius: 50%; }
 .fwd .ripple.on { animation: ripple var(--d-xfade) var(--ease-out) var(--t-press) both; }
 @keyframes ripple { from { opacity: .9; transform: scale(0.95); } to { opacity: 0; transform: scale(1.8); } }
-.scrim { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.scrim { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
 .scrim > rect { fill: var(--ink); fill-opacity: var(--dim); }
 /* holes live in the SVG mask: phase 1 = control, shown only during a forward press, never at rest */
 .h1 { opacity: 0; transition: none; }
 .fwd .h1.on { animation: hole-out var(--d-xfade) var(--ease-in) var(--t-swap) both; }
 @keyframes hole-out { from { opacity: 1; } to { opacity: 0; } }
-/* phase 2 = views that changed: the rest state, cross-fades with the frame */
+/* phase 2 = views that changed: the rest state, cross-fades with the state change */
 .h2 { transition-duration: var(--d-xfade); }
 .fwd .h2 { --delay: var(--t-swap); }
-.capstrip { flex: 1; display: flex; align-items: center; justify-content: space-between; padding: 0 134px; margin-top: -151px; }
-.capstrip .stack { flex: 1; }
+.capstrip { flex: 1; display: flex; align-items: center; justify-content: space-between; gap: 48px; padding: 0 96px; }
+.capstrip > .stack { flex: 1; }
 .capt { display: flex; flex-direction: column; gap: 6px; }
 .capt p:last-child { font-size: 30px; color: var(--soft); }
 .capt b { font-family: 'Space Grotesk', Arial, sans-serif; font-size: 40px; font-weight: 600; color: var(--ink); margin-right: 16px; }
+.capside { display: flex; flex-direction: column; align-items: flex-end; gap: 14px; }
 .dots { display: flex; gap: 12px; }
 .dots b { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--soft); position: relative; }
 .dots i { position: absolute; inset: 2px; border-radius: 50%; background: var(--orange); }
 
-/* demo */
-section.demo { padding: 0; gap: 0; }
-.dbar { height: 88px; flex: none; display: flex; align-items: center; justify-content: space-between; padding: 0 48px; background: var(--ink); color: var(--paper); }
-.dbar h3 { font-size: 36px; }
-.dbar a { font-size: 26px; color: var(--dsoft); }
-.dframe { position: relative; flex: 1; }
-.dframe img, .dframe iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
-.dframe img { object-fit: cover; object-position: top; }
-
-/* build pipeline */
+/* build plan pipeline */
 .pipe { display: flex; align-items: stretch; }
 .node { width: 372px; flex: none; background: var(--tone); border-radius: 16px; padding: 28px 30px; display: flex; flex-direction: column; gap: 10px; }
 .node .tag { margin-bottom: 2px; font-size: 24px; color: var(--violet); }
 .node h3 { font-size: 36px; }
-.node code { font-family: 'Space Grotesk', Arial, sans-serif; font-size: 32px; font-weight: 600; }
 .node p { font-size: 28px; color: var(--soft); line-height: 1.4; }
 .arrow { flex: 1; align-self: center; height: 6px; background: var(--orange); position: relative; margin: 0 10px 0 6px; transform-origin: 0 50%; }
 .arrow::after { content: ""; position: absolute; right: -12px; top: -9px; border: 12px solid transparent; border-left: 14px solid var(--orange); border-right: 0; }
 .arrow[data-step]:not(.on) { transform: scaleX(0); } /* drawn in from the left */
-.notes2 { display: flex; flex-direction: column; gap: 20px; }
+.notes2 { display: flex; flex-direction: column; gap: 18px; }
 .notes2 .item p { font-size: 26px; color: var(--soft); }
 .notes2 .item b { color: var(--ink); }
 
 /* closing */
-.url { font-family: 'Space Grotesk', Arial, sans-serif; font-size: 60px; font-weight: 600; }
 .fq { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
-.fcard { background: #1F2E52; border-radius: 16px; padding: 28px 32px; border-top: 6px solid var(--orange); font-size: 30px;
+.fcard { background: #1F2E52; border-radius: 16px; padding: 32px 36px; border-top: 6px solid var(--orange); font-size: 34px; line-height: 1.3;
   opacity: 0; transform: translateY(12px); transition: opacity var(--d-exit) var(--ease-in), transform var(--d-exit) var(--ease-in); }
 /* closing storyboard: slide fades in, then the three questions arrive one by one (--chain apart) */
 section.cur .fcard { opacity: 1; transform: none; --t: calc(var(--d-xfade) + var(--i) * var(--chain));
@@ -261,14 +280,14 @@ body.notes #ui { bottom: calc(10px + var(--nh, 0px)); }
   <div class="spacer"></div>
   <div class="cav" data-step="3">
     <p class="caveat">Arrests are a record of police activity, not of crimes committed.</p>
-    <p class="caveat2">2025: sex and age are missing for ~53% of records, so demographic views default to 2024.</p>
+    <p class="caveat2">2025: sex and age are missing for ~53% of records, so demographic views will default to 2024.</p>
   </div>
   <p class="small">Source: NYPD Arrests Data (Historic), NYC Open Data</p>
-  <aside>NYPD Arrests Data from NYC Open Data. [→] About 6.3 million arrests, 2006 to 2025, 78 precincts, 77 offense categories; arrests fell from about 422 thousand a year in 2010 to 140 thousand in 2020. [→] Four questions: who, what, where, when. [→] Two caveats: arrests record police activity, not crime; and 2025 lacks sex and age for about half the records, so demographic views default to 2024.</aside>
+  <aside>NYPD Arrests Data from NYC Open Data. [→] About 6.3 million arrests, 2006 to 2025, 78 precincts, 77 offense categories; arrests fell from about 422 thousand a year in 2010 to 140 thousand in 2020. [→] Four questions: who, what, where, when. [→] Two caveats: arrests record police activity, not crime; and 2025 lacks sex and age for about half the records, so the demographic views will default to 2024.</aside>
 </section>
 
 <!-- 3 · design sheet walk-through (camera) -->
-<section class="split" data-steps="6" id="sheet">
+<section class="split" data-steps="7" id="sheet">
   <div class="cam"><div class="cam-in"><img src="img/sheet.jpg" alt="Hand-drawn Design Sheet 5: a 2×2 dashboard with a precinct map, a precinct detail panel, waffle charts and a calendar heatmap, plus focus, operations and detail notes"></div></div>
   <div class="split-body">
     <div class="head"><p class="eyebrow">02 · Final design sheet</p><h2>Design Sheet 5</h2></div>
@@ -315,6 +334,13 @@ body.notes #ui { bottom: calc(10px + var(--nh, 0px)); }
         </div>
       </div>
       <div class="fade" data-step="5" data-until="5">
+        <h3>Focus</h3>
+        <div class="ops">
+          <div class="item"><p class="it">Waffle zoom</p><p class="id">1 figure = 1%, sorted by cohort</p></div>
+          <div class="item"><p class="it">Donut cluster zoom</p><p class="id">Centre = volume, ring = severity; zooming splits clusters into precincts</p></div>
+        </div>
+      </div>
+      <div class="fade" data-step="6" data-until="6">
         <h3>Operations</h3>
         <div class="ops">
           <div class="item"><p class="it">Linked filtering</p><p class="id">Click a precinct in A — B, C and D follow</p></div>
@@ -323,7 +349,7 @@ body.notes #ui { bottom: calc(10px + var(--nh, 0px)); }
           <div class="item"><p class="it">Abs / %</p><p class="id">Calendar in raw counts or row-normalised shares</p></div>
         </div>
       </div>
-      <div class="fade" data-step="6">
+      <div class="fade" data-step="7">
         <p class="lead">One 2×2 dashboard, one view per question.</p>
         <div class="grid4">
           <div class="cell"><p class="letter">A</p><p class="cell-t">Map</p><p class="cell-s">Where</p></div>
@@ -341,99 +367,92 @@ body.notes #ui { bottom: calc(10px + var(--nh, 0px)); }
       </div>
     </div>
   </div>
-  <aside>Our final design, Design Sheet 5: one 2×2 dashboard. [→] A, the map — where: choropleth, heat or donuts, count or per 10k. [→] B, precinct detail — what: sorted bars, trend line, severity mix. [→] C, waffles — who: one figure per percent. [→] D, calendar — when: weekday by month, absolute or percent. [→] Operations: click a precinct and the rest follow, layer switch, per 10k, abs/%. [→] Severity keeps the same three colours everywhere; magnitude is one hue.</aside>
+  <aside>Our final design, Design Sheet 5: one 2×2 dashboard. [→] A, the map — where: choropleth, heat or donuts, count or per 10k. [→] B, precinct detail — what: sorted bars, trend line, severity mix. [→] C, waffles — who: one figure per percent. [→] D, calendar — when: weekday by month, absolute or percent. [→] Focus: zoom into one waffle, one figure per percent; and donut clusters — centre is volume, ring is severity, zooming splits them into precincts. [→] Operations: click a precinct and the rest follow, layer switch, per 10k, abs/%. [→] Severity keeps the same three colours everywhere; magnitude is one hue.</aside>
 </section>
 
-<!-- 4 · bridge: sketch -> built -->
+<!-- 4 · bridge: sketch -> clean schematic layout -->
 <section class="bridge" data-steps="1">
   <div class="head">
-    <p class="eyebrow">03 · From sketch to working version</p>
+    <p class="eyebrow">03 · From sketch to a clean layout</p>
     <div class="stack">
       <h2 class="fade" data-step="0" data-until="0">The sketch: four views, A–D</h2>
-      <h2 class="fade" data-step="1">…and it is already built</h2>
+      <h2 class="fade" data-step="1">The same four views, simplified</h2>
     </div>
   </div>
   <div class="b2x2">
-    <div class="bcell"><div class="crop" data-img="sheet" data-r="35,175,435,275"></div><div class="crop app fade" data-step="1" data-img="app" data-r="16,78,938,460" style="--i:0"></div><p class="blabel"><b>A</b><span>Map</span></p></div>
-    <div class="bcell"><div class="crop" data-img="sheet" data-r="465,212,485,205"></div><div class="crop app fade" data-step="1" data-img="app" data-r="966,78,938,460" style="--i:1"></div><p class="blabel"><b>B</b><span>Precinct detail</span></p></div>
-    <div class="bcell"><div class="crop" data-img="sheet" data-r="30,448,445,210"></div><div class="crop app fade" data-step="1" data-img="app" data-r="16,550,938,460" style="--i:2"></div><p class="blabel"><b>C</b><span>Waffles</span></p></div>
-    <div class="bcell"><div class="crop" data-img="sheet" data-r="470,418,480,245"></div><div class="crop app fade" data-step="1" data-img="app" data-r="966,550,938,460" style="--i:3"></div><p class="blabel"><b>D</b><span>Calendar</span></p></div>
+    <div class="bcell"><div class="crop" data-r="35,175,435,275"></div><div class="schem fade" data-step="1" data-panel="A" style="--i:0"></div><p class="blabel"><b>A</b><span>Map</span></p></div>
+    <div class="bcell"><div class="crop" data-r="465,212,485,205"></div><div class="schem fade" data-step="1" data-panel="B" style="--i:1"></div><p class="blabel"><b>B</b><span>Precinct detail</span></p></div>
+    <div class="bcell"><div class="crop" data-r="30,448,445,210"></div><div class="schem fade" data-step="1" data-panel="C" style="--i:2"></div><p class="blabel"><b>C</b><span>Waffles</span></p></div>
+    <div class="bcell"><div class="crop" data-r="470,418,480,245"></div><div class="schem fade" data-step="1" data-panel="D" style="--i:3"></div><p class="blabel"><b>D</b><span>Calendar</span></p></div>
   </div>
-  <aside>The sheet’s layout block is a 2×2: map, detail, waffles, calendar. [→] And that is exactly what we built — same four views in the same positions, all implemented and linked.</aside>
+  <div class="bfoot"><p class="note-ill fade" data-step="1">Schematic — illustrative values</p></div>
+  <aside>The sheet’s layout block is a 2×2: map, detail, waffles, calendar. [→] Here are the same four views as a clean schematic, in the same positions — this is the layout we plan to implement. The values are illustrative.</aside>
 </section>
 
-<!-- 5 · interactivity, acted out -->
-<section class="live" data-steps="7" id="live">
-  <div class="shotbox">
-    <img src="img/s0.jpg" alt="The dashboard citywide, 2024, all offenses">
-    <img class="frame fade" data-step="1" src="img/s1.jpg" alt="Year set to 2010">
-    <img class="frame fade" data-step="2" src="img/s2.jpg" alt="Offense filter: Dangerous Drugs (Misdemeanor)">
-    <img class="frame fade" data-step="3" src="img/s3.jpg" alt="Precinct 75, Brooklyn, selected">
-    <img class="frame fade" data-step="4" src="img/s4.jpg" alt="Cross-filter: Sex Female">
-    <img class="frame fade" data-step="5" src="img/s5.jpg" alt="Map in arrests per 10k residents">
-    <img class="frame fade" data-step="6" src="img/s6.jpg" alt="Calendar in % deviation from the mean">
-    <img class="frame fade" data-step="7" src="img/s7.jpg" alt="Tooltip on a calendar cell">
-    <svg class="scrim fade" data-step="1" viewBox="0 0 1920 1080" aria-hidden="true">
-      <mask id="spot" maskUnits="userSpaceOnUse" x="0" y="0" width="1920" height="1080"><rect width="1920" height="1080" fill="#fff"/></mask>
-      <rect width="1920" height="1080" mask="url(#spot)"/>
-    </svg>
+<!-- 5 · interactivity, acted out on the schematic -->
+<section class="live" data-steps="10" id="live">
+  <div class="dashbox">
+    <div class="dcam"><svg class="scrim fade" data-step="1" viewBox="0 0 1728 860" aria-hidden="true">
+      <mask id="spot" maskUnits="userSpaceOnUse" x="-20" y="-20" width="1768" height="900"><rect x="-20" y="-20" width="1768" height="900" fill="#fff"/></mask>
+      <rect x="-20" y="-20" width="1768" height="900" mask="url(#spot)"/>
+    </svg></div>
     <div class="cursor"><svg class="cin" viewBox="0 0 20 28" aria-hidden="true"><path d="M2 2 L2 23 L7.5 18 L11 26 L14.5 24.5 L11 16.8 L18 16.8 Z" fill="#14213D" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg></div>
   </div>
   <div class="capstrip">
     <div class="stack">
-      <div class="capt fade" data-step="0" data-until="0"><p class="eyebrow">04 · Interactivity</p><p><b>Linked views, driven by clicks</b>every view filters the others</p></div>
-      <div class="capt fade" data-step="1" data-until="1"><p class="eyebrow">Year slider + play</p><p><b>2024 → 2010</b>step or animate through 2006–2025</p></div>
-      <div class="capt fade" data-step="2" data-until="2"><p class="eyebrow">Offense filter</p><p><b>Dangerous Drugs (Misd.)</b>every view narrows to one category</p></div>
-      <div class="capt fade" data-step="3" data-until="3"><p class="eyebrow">Click a precinct</p><p><b>Precinct 75, Brooklyn</b>detail, waffles and calendar follow</p></div>
-      <div class="capt fade" data-step="4" data-until="4"><p class="eyebrow">Click a cohort</p><p><b>Sex: Female</b>cross-filters the map, detail and calendar</p></div>
-      <div class="capt fade" data-step="5" data-until="5"><p class="eyebrow">Toggle</p><p><b>Count → per 10k</b>map normalised by population</p></div>
-      <div class="capt fade" data-step="6" data-until="6"><p class="eyebrow">Toggle</p><p><b>Abs → %</b>calendar as deviation from the mean</p></div>
-      <div class="capt fade" data-step="7" data-until="7"><p class="eyebrow">Tooltips everywhere</p><p><b>Hover any mark</b>exact values on every mark</p></div>
+      <div class="capt fade" data-step="0" data-until="0"><p class="eyebrow">04 · Planned interactivity</p><p><b>Linked views, driven by clicks</b>every view will filter the others</p></div>
+      <div class="capt fade" data-step="1" data-until="1"><p class="eyebrow">Year slider + play</p><p><b>2024 → 2010</b>every view updates to that year</p></div>
+      <div class="capt fade" data-step="2" data-until="2"><p class="eyebrow">Offense filter</p><p><b>Offense: Drugs</b>all four views narrow to one category</p></div>
+      <div class="capt fade" data-step="3" data-until="3"><p class="eyebrow">Click a precinct</p><p><b>Precinct 75</b>detail, waffles and calendar follow</p></div>
+      <div class="capt fade" data-step="4" data-until="4"><p class="eyebrow">Click a cohort</p><p><b>Female</b>map, detail and calendar are cross-filtered</p></div>
+      <div class="capt fade" data-step="5" data-until="5"><p class="eyebrow">Focus · waffle zoom</p><p><b>Zoom into a waffle</b>1 figure = 1%, sorted by cohort</p></div>
+      <div class="capt fade" data-step="6" data-until="6"><p class="eyebrow">Toggle</p><p><b>Count → per 10k</b>map normalised by population</p></div>
+      <div class="capt fade" data-step="7" data-until="7"><p class="eyebrow">Map layer</p><p><b>Choropleth → Donuts</b>centre = volume, ring = severity mix</p></div>
+      <div class="capt fade" data-step="8" data-until="8"><p class="eyebrow">Focus · cluster zoom</p><p><b>Zoom into a cluster</b>it splits into precincts</p></div>
+      <div class="capt fade" data-step="9" data-until="9"><p class="eyebrow">Toggle</p><p><b>Abs → %</b>calendar as deviation from the mean</p></div>
+      <div class="capt fade" data-step="10" data-until="10"><p class="eyebrow">Tooltips</p><p><b>Hover any mark</b>its exact value appears</p></div>
     </div>
-    <div class="dots" aria-hidden="true"><b><i class="fade" data-step="1"></i></b><b><i class="fade" data-step="2"></i></b><b><i class="fade" data-step="3"></i></b><b><i class="fade" data-step="4"></i></b><b><i class="fade" data-step="5"></i></b><b><i class="fade" data-step="6"></i></b><b><i class="fade" data-step="7"></i></b></div>
+    <div class="capside">
+      <p class="note-ill">Schematic — illustrative values</p>
+      <div class="dots" aria-hidden="true"><b><i class="fade" data-step="1"></i></b><b><i class="fade" data-step="2"></i></b><b><i class="fade" data-step="3"></i></b><b><i class="fade" data-step="4"></i></b><b><i class="fade" data-step="5"></i></b><b><i class="fade" data-step="6"></i></b><b><i class="fade" data-step="7"></i></b><b><i class="fade" data-step="8"></i></b><b><i class="fade" data-step="9"></i></b><b><i class="fade" data-step="10"></i></b></div>
+    </div>
   </div>
-  <aside>The real app, step by step — every state is a capture. [→] Year back to 2010. [→] Filter to misdemeanor drug arrests. [→] Click precinct 75 in Brooklyn: detail, waffles and calendar follow. [→] Click the female cohort: map, detail and calendar are cross-filtered. [→] Per 10k residents on the map. [→] Calendar as percent deviation. [→] And tooltips with exact numbers on every mark.</aside>
+  <aside>How the four views will work together, shown on the schematic. [→] Move the year to 2010: every view updates. [→] Pick an offense: all four narrow to it. [→] Click a precinct: detail, waffles and calendar follow. [→] Click the female cohort: map, detail and calendar are cross-filtered. [→] Focus: zoom into one waffle — one figure is one percent. [→] Per 10k residents on the map. [→] Switch the map to donut clusters: centre is volume, ring is severity. [→] Zoom in and a cluster splits into precincts. [→] Calendar as percent deviation. [→] And a tooltip with the exact value on every mark.</aside>
 </section>
 
-<!-- 6 · live demo -->
-<section class="demo" data-steps="0" id="demo">
-  <div class="dbar"><h3>Try it live</h3><a href="https://mavakon.github.io/nypd-arrests-explorer/" target="_blank" rel="noopener">mavakon.github.io/nypd-arrests-explorer</a></div>
-  <div class="dframe"><img src="img/s0.jpg" alt="The full live dashboard: map, offense bars and trend, waffle charts and calendar heatmap"><iframe title="NYC Arrests Explorer, live"></iframe></div>
-  <aside>Optional, if time: 30 seconds in the live app — pick a precinct, click a cohort. Click inside the app to use it; PageDown / PageUp still move the slides.</aside>
-</section>
-
-<!-- 7 · how it is built -->
-<section data-steps="2" style="gap:48px">
-  <div class="head"><p class="eyebrow">05 · Implementation</p><h2>How it is built</h2></div>
+<!-- 6 · how we will build it -->
+<section data-steps="2" style="gap:44px">
+  <div class="head"><p class="eyebrow">05 · Plan</p><h2>How we will build it</h2></div>
   <div class="pipe">
     <div class="node"><p class="tag">Source</p><h3>NYC Open Data API</h3><p>NYPD Arrests Data (Historic): 6,264,978 rows, 2006–2025</p></div>
     <i class="arrow" data-step="1"></i>
-    <div class="node" data-step="1" style="--delay:var(--chain)"><p class="tag">Build script</p><code>prep/build_data.py</code><p>Python. Aggregates server-side with SoQL — raw rows never downloaded. Responses cached, totals reconciled.</p></div>
+    <div class="node" data-step="1" style="--delay:var(--chain)"><p class="tag">Prep</p><h3>Python prep script</h3><p>Aggregate server-side with SoQL, so raw rows are never downloaded. Cache responses, reconcile totals with the API.</p></div>
     <i class="arrow" data-step="1" style="--delay:calc(2 * var(--chain))"></i>
     <div class="node" data-step="1" style="--delay:calc(3 * var(--chain))"><p class="tag">Output</p><h3>Static JSON</h3><p>Count cube, calendar, demographics, per-precinct and cross-filter files, precinct GeoJSON</p></div>
     <i class="arrow" data-step="2"></i>
-    <div class="node" data-step="2" style="--delay:var(--chain)"><p class="tag">Browser</p><h3>D3 + Leaflet</h3><p>No server: static files hosted on GitHub Pages</p></div>
+    <div class="node" data-step="2" style="--delay:var(--chain)"><p class="tag">Browser</p><h3>D3 + Leaflet</h3><p>No server: static hosting, e.g. GitHub Pages</p></div>
   </div>
   <div class="notes2">
-    <div class="item" data-step="2" style="--delay:calc(2 * var(--chain))"><p><b>Checks:</b> precinct cube 6,264,974 + 4 arrests in precincts without a polygon = 6,264,978. The 7,116 rows without usable coordinates are missing only from the heat layer.</p></div>
-    <div class="item" data-step="2" style="--delay:calc(2 * var(--chain) + var(--stag-piece))"><p><b>Changed from the sheet:</b> it planned Python + Dash + Plotly; we built a static D3 + Leaflet site — no server to host or keep running.</p></div>
+    <div class="item" data-step="2" style="--delay:calc(2 * var(--chain))"><p><b>Checks we plan:</b> every aggregate must reconcile with the API total; rows without usable coordinates will be missing only from the heat layer.</p></div>
+    <div class="item" data-step="2" style="--delay:calc(2 * var(--chain) + var(--stag-piece))"><p><b>Change from the sheet:</b> instead of Python + Dash + Plotly we plan a static D3 + Leaflet site — no server to host or keep running.</p></div>
+    <div class="item" data-step="2" style="--delay:calc(2 * var(--chain) + 2 * var(--stag-piece))"><p><b>Risk:</b> ~6.3M rows — so all aggregation happens before the browser; the client only looks values up.</p></div>
   </div>
-  <aside>How it is built. The source is the NYC Open Data API, 6.3 million rows. [→] A Python script aggregates on the server with SoQL, so we never download the raw rows; it caches responses and checks totals; the output is static JSON. [→] The browser does the rest with D3 and Leaflet, no server, on GitHub Pages. Totals reconcile to the row; one change from the sheet: Dash became a static site.</aside>
+  <aside>How we will build it. The source is the NYC Open Data API, about 6.3 million rows. [→] A Python prep script will aggregate on the server with SoQL, so we never download the raw rows; it caches responses and reconciles totals; the output is static JSON. [→] The browser does the rest with D3 and Leaflet — no server, static hosting. One change from the sheet: instead of Dash we plan a static site. The main risk is data size, so all aggregation happens before the browser.</aside>
 </section>
 
-<!-- 8 · closing -->
+<!-- 7 · closing -->
 <section class="dark" data-steps="0">
-  <div class="head"><p class="eyebrow">Try it live</p><p class="url"><a href="https://mavakon.github.io/nypd-arrests-explorer/" target="_blank" rel="noopener">mavakon.github.io/nypd-arrests-explorer</a></p></div>
+  <p class="eyebrow">06 · Feedback</p>
   <div class="spacer"></div>
-  <h2>Feedback welcome</h2>
+  <div class="head"><h2>Feedback welcome</h2><p class="lead">Three questions about the design:</p></div>
   <div class="fq">
-    <div class="fcard" style="--i:0">Is the cross-filtering discoverable?</div>
-    <div class="fcard" style="--i:1">Are the waffles readable for small groups?</div>
-    <div class="fcard" style="--i:2">Anything confusing in the calendar’s % mode?</div>
+    <div class="fcard" style="--i:0">Would the cross-filtering be discoverable?</div>
+    <div class="fcard" style="--i:1">Will the waffles stay readable for small groups?</div>
+    <div class="fcard" style="--i:2">Is the calendar’s % mode clear?</div>
   </div>
   <div class="spacer"></div>
   <p class="small">Lada Spektorovska · Maksym Konshyn · Nikita Dakhno — PV251, seminar group 5</p>
-  <aside>Try it yourselves at this address. We’d like feedback on three things: is the cross-filtering discoverable? Are the waffles readable for small groups? Is the calendar’s percent mode clear? Thank you.</aside>
+  <aside>We’d like feedback on three things: would the cross-filtering be discoverable? Will the waffles stay readable for small groups? Is the calendar’s percent mode clear? Thank you.</aside>
 </section>
 
 </div>
@@ -446,13 +465,234 @@ const secs = [...document.querySelectorAll('section')];
 const steps = secs.map(s => +s.dataset.steps);
 const total = steps.reduce((a, n) => a + n + 1, 0);
 // sheet camera stops [x, y, w, h(, centre-y)] in sheet.jpg px (955×1280); null = whole sheet.
-// 5th value keeps the '4. DETAIL' block out of frame on the operations stop.
-const CAM = [null, [35,175,435,275], [465,212,485,205], [30,448,445,210], [470,418,480,245], [615,658,340,325,755], null];
-// cursor targets per interactivity step, measured in the 1920×1080 captures (step 0 = resting spot)
-const CUR = [[960,545], [576,32], [1010,32], [553,368], [611,905], [908,102], [1716,574], [1200,732]];
-const HOVER = 7; // tooltip step: hover only, no press
-const IMG = { sheet: ['img/sheet.jpg', 955, 1280], app: ['img/s0.jpg', 1920, 1080] };
+// optional 5th value {s, cx, cy} overrides scale / centre: keeps the '4. DETAIL' block (x > 617, y > 990) out of frame.
+const CAM = [null, [35,175,435,275], [465,212,485,205], [30,448,445,210], [470,418,480,245],
+  [22,662,592,612, { s: 1.62, cx: 308.6, cy: 968 }], [615,658,340,325, { cy: 755 }], null];
 let cur = 0, step = 0, fwd = false;
+
+// ---------- schematic dashboard: 1728×860 user units, drawn once; state = f(step) ----------
+const NS = 'http://www.w3.org/2000/svg';
+const el = (tag, attrs, parent, text) => { const e = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs || {})) e.setAttribute(k, v); if (text != null) e.textContent = text; if (parent) parent.append(e); return e; };
+const rnd = (a, b) => { const x = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return x - Math.floor(x); }; // deterministic "illustrative" values
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const PANEL = { A: [0, 96, 856, 374], B: [872, 96, 856, 374], C: [0, 486, 856, 374], D: [872, 486, 856, 374] };
+// which state each part shows at interaction step k (0..7): changes only where that interaction affects it
+const T = { year: 1, offense: 2, precinct: 3, cohort: 4, wzoom: 5, rate: 6, donuts: 7, czoom: 8, pct: 9, tip: 10 }; // interaction order
+const MAP_S = [0, 1, 2, 2, 3, 3, 4, 4, 4, 4, 4], BAR_S = [0, 1, 2, 3, 4, 4, 4, 4, 4, 4, 4], WAF_S = [0, 1, 2, 3, 3, 3, 3, 3, 3, 3, 3], CAL_S = [0, 1, 2, 3, 4, 4, 4, 4, 4, 4, 4];
+const FEM = [[18, 22, 12], [16, 20, 14], [14, 12, 16], [20, 15, 9]]; // last cell of each grid is drawn as 'unknown' // female figures per waffle (F, M, V) per state
+const yearX = y => 80 + 320 * (y - 2006) / 19, ruleX = y => 1372 + 332 * (y - 2006) / 19;
+const mapVal = (i, s) => s === 4 ? clamp(0.15 + 0.85 * rnd(i, 41), 0.12, 1)
+  : clamp(0.55 * rnd(i, 0) + 0.45 * rnd(i, s + 1) + [0, 0.12, -0.05, -0.1][s], 0.12, 1);
+const barVal = (j, s) => j === 0 ? 0.8 + 0.2 * rnd(0, s) : (1 - j * 0.14) * (0.62 + 0.3 * rnd(j, s + 5));
+const calVal = (d, m, s) => clamp(0.28 + 0.4 * [0.5, 0.8, 1, 0.9, 0.7, 0.35, 0][d] + 0.12 * Math.sin((m + s) * 0.8) + 0.22 * rnd(d * 12 + m, s + 3), 0.1, 1);
+// NYC precinct outlines [precinct, borough, path] in dashboard units: data/precincts.geojson projected
+// (equirectangular, cos-lat), Douglas–Peucker 0.9 units, slivers dropped — generated offline, pasted as static data.
+const NYC = [[1,"M","M408,323L410,323L410,326L404,330L403,328L406,323ZM418,300L413,308L417,313L416,314L413,315L412,318L412,317L409,318L406,314L408,305L410,305L408,304L410,303L411,300L409,300L411,299L411,298L409,297L415,298Z"],[5,"M","M423,302L421,308L421,311L417,313L413,308L418,300Z"],[6,"M","M412,288L422,294L418,300L415,298L409,297L411,297L411,295L409,295L411,295L411,290L410,289L412,289L411,289Z"],[7,"M","M431,305L429,311L421,311L421,308L423,302Z"],[9,"M","M432,299L431,305L418,300L422,294Z"],[10,"M","M416,274L421,276L418,283L421,284L417,291L410,287L412,287L410,286L412,286L411,285L412,285L411,284L412,284L411,284L412,281L411,281L412,281L414,277L413,276L415,276L416,275L414,274L416,274L415,273Z"],[13,"M","M427,287L432,290L431,293L430,293L432,299L417,291L421,284Z"],[14,"M","M430,280L429,283L427,282L426,284L428,285L426,288L418,283L421,276Z"],[17,"M","M439,277L432,290L427,287L428,285L426,284L427,282L429,283L434,274Z"],[18,"M","M420,266L434,274L430,280L415,273L417,273L416,272L418,272L416,271L418,272L416,270L418,271L417,269L418,270L417,268L419,269L419,268L418,267L420,267L419,266Z"],[19,"M","M439,277L431,273L440,256L447,260L448,264Z"],[20,"M","M433,258L427,270L420,266L423,262L421,262L423,262L426,254Z"],[22,"M","M444,250L431,273L427,270L439,247Z"],[23,"M","M447,260L440,256L445,248L453,252Z"],[24,"M","M438,247L433,258L426,254L432,243Z"],[25,"M","M453,255L454,254L456,254L455,252L457,246L463,251L462,253L456,261L451,259ZM453,252L445,248L446,245L446,245L452,235L452,241L455,248L455,250Z"],[26,"M","M446,233L438,247L432,243L438,233L442,235L444,232Z"],[28,"M","M448,242L446,245L446,245L444,250L438,247L441,240L443,239Z"],[30,"M","M449,226L449,228L446,233L444,232L442,235L438,233L440,228L443,223Z"],[32,"M","M452,222L452,235L448,242L443,239L449,228L449,225Z"],[33,"M","M455,215L449,226L443,223L446,217L445,212L448,212Z"],[34,"M","M455,215L448,212L445,212L448,210L456,193L458,193L459,196L459,194L460,196L464,196L465,197L460,206L459,205L459,208Z"],[40,"X","M469,244L464,250L458,246L455,246L453,241L453,234L457,235L461,231L470,233L468,239Z"],[41,"X","M478,228L479,228L480,234L484,237L483,237L485,238L487,243L484,247L481,246L478,246L476,243L473,243L469,244L468,239L472,227L474,229Z"],[42,"X","M481,221L477,229L472,227L470,233L461,231L464,228L469,216L470,217L473,217L476,220L478,219Z"],[43,"X","M502,222L501,227L502,233L500,239L499,240L497,238L494,237L497,239L498,244L493,244L492,240L492,242L488,240L479,232L478,226L481,221L484,222L487,219L495,218L496,223Z"],[44,"X","M469,216L464,228L457,235L453,234L452,224L456,215L458,216Z"],[45,"X","M530,206L530,210L533,211L533,215L534,214L533,216L535,217L533,217L534,217L533,218L534,218L533,222L531,221L528,215L529,211L527,211L529,210L528,210L529,210L528,210L529,209L528,207ZM541,209L540,216L538,211L539,205L542,209ZM521,187L527,189L522,199L519,197L519,199L523,201L525,196L527,196L527,192L529,190L529,192L532,192L531,196L532,196L532,197L533,196L533,197L531,199L530,199L528,200L528,204L527,208L524,209L524,214L522,210L521,204L519,206L516,202L515,204L517,206L517,209L515,209L515,211L515,215L516,214L516,215L517,215L517,216L518,215L517,217L514,216L516,218L515,221L516,226L518,228L516,229L517,230L516,230L520,230L521,234L525,236L522,239L520,236L521,239L529,242L529,244L527,245L518,238L515,238L508,240L507,244L505,244L504,243L502,239L503,232L501,227L503,224L503,220L503,222L496,223L495,218L500,215L502,219L503,219L505,210L509,204L505,196L507,191L515,187Z"],[46,"X","M475,204L469,216L458,216L456,215L462,205L465,207L466,205L468,206L470,203Z"],[47,"X","M521,187L515,187L506,191L505,196L509,205L495,196L493,198L485,198L486,191L484,191L484,190L482,190L481,182L482,173L492,177L495,171L496,170L495,172L502,174L503,181Z"],[48,"X","M485,219L484,222L482,222L478,219L476,220L473,217L470,217L469,216L474,205L479,200L481,205L480,214L483,216L482,217Z"],[49,"X","M509,204L505,210L503,219L502,219L500,215L498,217L490,218L484,221L486,215L485,198L493,198L495,196Z"],[50,"X","M482,186L480,189L477,188L471,200L467,196L457,192L465,166L482,173L481,182Z"],[52,"X","M485,198L485,219L482,217L483,216L480,214L481,205L479,200L475,204L470,203L468,206L466,205L465,207L462,205L465,200L465,195L471,200L477,188L480,189L482,186L482,190L484,190L484,191L486,191Z"],[60,"K","M425,392L431,396L430,397L438,396L438,400L441,401L441,407L426,409L426,410L425,409L416,410L415,409L411,407L410,404L412,402L424,403L424,402L423,403L421,402L422,400L419,401L417,400Z"],[61,"K","M461,398L457,399L455,397L457,395L455,397L454,393L453,392L454,397L454,398L457,400L463,399L464,400L461,401L464,402L457,400L442,401L453,402L454,406L441,407L441,401L438,400L438,396L430,397L431,396L425,392L431,391L431,382L443,381L446,377L447,380Z"],[62,"K","M431,382L431,391L425,391L421,395L417,398L418,397L417,396L418,395L417,395L418,393L416,394L412,389L406,387L418,370L431,379Z"],[63,"K","M490,400L488,402L486,400L486,398L488,394L491,397ZM460,389L462,390L463,394L462,395L459,391ZM496,391L491,391L490,388L491,387L494,387L497,390ZM476,404L473,405L471,397L464,399L464,392L459,387L457,389L455,386L453,387L462,396L461,398L447,380L445,368L450,366L460,358L460,366L469,371L470,373L472,374L472,378L475,380L474,381L476,381L474,384L470,385L470,380L466,376L469,381L469,385L467,385L466,384L466,386L463,386L461,382L463,378L460,383L463,387L465,388L477,385L480,386L483,399L481,403Z"],[66,"K","M432,355L434,364L429,365L429,369L435,368L437,382L431,382L431,379L411,364L419,355L423,358Z"],[67,"K","M466,353L457,361L449,366L446,367L444,361L441,361L440,350L454,349L453,344L457,342Z"],[68,"K","M399,358L411,364L418,370L406,387L400,385L395,378L394,372L397,361L396,361L397,361L397,359Z"],[69,"K","M504,379L502,385L500,386L501,385L500,384L500,385L500,384L498,385L499,384L497,384L500,383L499,379L502,381ZM487,376L482,378L481,375L488,369L489,374ZM476,354L477,357L482,363L479,367L479,369L477,369L473,373L460,366L460,358L469,350L470,347L471,351L474,350Z"],[70,"K","M440,350L441,361L444,361L447,368L445,368L446,377L443,381L437,382L435,368L429,369L429,365L434,364L432,353L438,349Z"],[71,"K","M455,343L453,344L454,349L437,350L437,338L455,340Z"],[72,"K","M418,338L419,340L430,348L432,355L423,358L419,355L411,364L399,358L403,356L401,354L404,355L403,353L405,353L403,351L405,353L404,351L405,352L405,350L407,351L406,350L407,351L406,349L408,350L407,348L409,348L407,347L408,346L410,347L410,345L412,347L411,344L412,344L414,345L413,343L416,344L417,343L415,342L417,340Z"],[73,"K","M468,333L471,347L466,353L457,342L459,334L461,335L461,327Z"],[75,"K","M495,366L496,367L492,367L495,365ZM499,364L497,366L498,362L500,363ZM490,333L494,344L493,344L491,347L493,345L493,346L490,349L493,353L493,358L488,361L481,350L487,362L484,363L480,358L478,358L474,350L471,351L468,333L469,332L471,332L473,329L474,330L476,329L484,322L487,322L488,331L489,331Z"],[76,"K","M425,330L422,335L419,335L417,340L414,341L413,342L414,339L411,343L407,343L406,338L408,343L410,342L411,340L409,339L410,339L409,339L409,338L408,339L410,337L408,337L409,336L407,338L406,332L410,330L410,332L412,330L410,329L414,328L413,326L414,327L413,325L415,325L414,324L416,325L414,323L421,325L420,328Z"],[77,"K","M439,332L459,334L458,341L455,343L455,340L441,339L433,337L434,331Z"],[78,"K","M434,331L433,336L433,337L437,338L437,350L432,353L430,348L419,340L418,338L420,335L422,335L425,330L427,331L429,329L430,328L431,330Z"],[79,"K","M448,318L450,321L449,321L450,334L439,332L437,319Z"],[81,"K","M459,334L450,334L449,321L450,321L450,319L461,327L461,335Z"],[83,"K","M472,331L471,332L469,332L468,333L448,318L456,314L459,311L464,316L464,318L468,321L467,322L470,324Z"],[84,"K","M428,314L427,321L426,321L428,329L427,331L420,328L421,325L415,323L416,323L415,322L417,322L417,320L416,320L418,319L417,318L418,318L418,317L420,315Z"],[88,"K","M433,314L437,318L439,332L428,329L426,324L428,314L429,316L430,315L430,318L431,317L432,318L431,317L432,318L431,316L433,318L431,316L433,317L430,313L432,314L432,312L434,316Z"],[90,"K","M457,308L459,311L456,314L448,318L437,319L437,318L433,312L434,305L440,308L444,308L457,304L453,308L452,310L454,312L453,309L455,306L457,305Z"],[94,"K","M457,304L448,308L438,307L435,305L437,300L439,301L437,300L437,296L436,296L437,296L437,294L441,290L445,292L445,294L446,293L450,297L455,299Z"],[100,"Q","M507,393L507,395L505,396L501,394L500,392L502,391ZM530,390L530,398L507,404L486,414L473,419L467,420L448,430L449,420L456,416L464,413L467,415L469,415L474,411L482,411L497,401L503,401L512,398L519,393L521,395L519,393L521,392L522,394L521,391L522,389L528,389L531,386L529,389L529,392ZM518,389L517,390L516,386L518,387ZM507,382L508,384L505,385ZM511,361L513,368L515,371L514,373L516,374L514,376L515,379L516,378L515,380L516,383L512,392L506,393L505,392L506,390L512,389L511,388L513,380L512,383L510,379L504,378L505,375L508,372L507,372L507,366L506,362L510,363Z"],[101,"Q","M530,398L530,390L535,382L537,382L537,386L534,390L534,391L537,387L538,390L541,390L539,389L540,382L539,381L538,382L538,379L542,379L542,380L545,381L544,382L545,381L553,380L557,386L557,390L555,391L557,391L557,393L552,393L549,395L544,395Z"],[102,"Q","M515,315L518,324L495,332L490,333L489,331L488,331L486,320L487,316L496,317L494,313L504,310L510,306Z"],[103,"Q","M550,313L544,313L520,329L515,315L538,307L545,303Z"],[104,"Q","M477,294L478,298L484,296L486,297L492,308L492,314L496,316L493,317L493,316L487,316L487,322L484,322L476,329L474,330L473,329L472,331L470,324L467,322L468,321L464,318L464,316L459,311L457,307L459,307L457,302L459,302L457,301L458,300L461,303L464,302L471,293Z"],[105,"Q","M563,330L552,325L553,323L545,303L548,301L547,300L561,286L566,277L570,276L576,281L577,290L573,298L561,302L563,311Z"],[106,"Q","M510,355L507,351L508,349L507,350L508,348L508,346L508,348L507,350L507,348L506,348L507,354L505,354L503,345L505,357L497,358L496,356L497,352L494,352L491,349L492,347L491,349L490,348L493,346L493,345L491,346L494,344L490,333L495,332L518,324L523,336L523,343L520,343L520,346L517,345L517,344L506,343Z"],[107,"Q","M547,300L548,301L541,306L515,315L506,298L504,288L507,288L507,291L509,292L510,290L510,288L516,291L526,291L541,286L544,292L542,295Z"],[108,"Q","M471,280L477,294L470,294L466,299L461,303L451,297L448,293L446,292L450,288L445,291L441,290L437,291L439,284L442,284L440,283L443,279L451,283L451,284L453,282L458,282L459,283Z"],[109,"Q","M539,260L537,263L528,266L528,281L527,280L526,291L516,291L510,288L510,290L508,292L507,288L505,288L505,284L503,278L503,272L503,271L500,272L498,271L498,268L496,267L498,263L496,262L497,260L494,260L492,258L495,256L494,256L496,251L498,252L498,251L500,251L501,250L502,251L503,249L502,249L504,252L504,255L507,255L509,252L507,250L510,249L513,247L517,250L517,249L527,251L528,255L534,254L534,252L533,251L536,250L539,256L538,257L536,256Z"],[110,"Q","M505,287L504,288L504,293L506,298L504,300L500,294L499,290L478,298L473,285L491,283L496,281L495,277L492,274L493,273L493,275L492,274L497,276L497,275L496,275L498,276L503,272L504,274L503,279L505,283Z"],[111,"Q","M570,276L566,277L560,287L547,300L542,295L544,292L541,286L526,291L525,290L527,287L527,280L528,281L528,266L537,263L539,260L542,262L542,265L546,271L553,278L548,270L549,266L548,263L550,260L553,264L554,263Z"],[112,"Q","M506,298L510,303L510,306L504,310L494,313L494,314L492,314L492,308L486,297L484,296L499,290L500,294L504,300Z"],[113,"Q","M524,371L522,379L520,373ZM550,314L553,323L551,327L545,330L543,337L537,338L539,341L529,342L528,343L537,346L551,357L554,361L552,362L551,357L548,355L552,359L551,364L542,368L540,375L539,372L537,375L539,372L536,369L535,369L532,375L534,379L528,383L523,380L527,373L530,372L532,367L529,365L525,367L529,364L528,363L512,354L511,350L512,346L518,346L514,345L511,346L510,350L512,355L510,353L510,355L506,343L517,344L517,345L520,346L520,343L523,343L523,340L520,329L544,313Z"],[114,"Q","M439,282L437,283L439,280L449,267L448,269ZM476,266L477,271L473,272L470,277L471,280L459,283L458,282L453,282L451,284L451,283L443,279L448,271L452,269L450,266L451,264L455,264L465,254L470,255L472,258L469,261L473,259L473,261L475,260L474,263L475,265L476,263ZM476,248L485,254L485,257L482,258L476,256L474,253Z"],[115,"Q","M492,274L495,277L496,281L491,283L473,285L470,279L473,272L477,271L475,266L479,266L478,262L482,261L481,260L484,261L487,256L487,259L485,261L494,267L493,269L494,269L490,271Z"],[116,"Q","M563,330L562,344L564,352L555,356L556,364L555,364L555,362L554,361L552,363L554,360L551,357L537,346L528,343L529,342L539,341L537,338L543,337L545,330L552,325Z"],[120,"S","M388,386L383,387L366,381L355,381L347,383L346,372L349,360L350,360L354,359L359,357L366,357L371,354L378,357L378,359L379,359L378,359L379,359L378,360L379,360L378,360L378,367L380,368L378,368L377,370Z"],[121,"S","M349,361L346,372L347,380L347,383L352,382L352,388L350,390L347,389L343,396L339,397L335,402L338,408L333,415L328,417L326,416L326,412L323,412L317,405L315,405L312,403L307,403L307,396L311,390L308,383L310,366L317,358L318,359L318,357L320,357L321,359L323,357L325,358L324,360L325,359L328,359L329,360L330,360L330,361L331,361L332,362L333,362L334,361L334,362L336,361L337,362L337,361L345,359Z"],[122,"S","M388,386L389,389L377,403L377,404L377,403L371,411L368,412L361,422L359,421L356,425L351,428L344,438L342,438L342,434L345,434L348,431L348,429L347,427L344,426L344,428L343,427L343,429L341,429L341,433L336,436L332,433L328,428L326,416L328,417L333,415L338,409L338,407L335,402L339,397L343,396L347,389L350,390L352,388L352,382L355,381L366,381L383,387Z"],[123,"S","M326,416L328,428L336,436L333,439L324,443L322,446L320,445L318,446L312,452L310,451L310,450L306,451L300,457L293,458L285,462L283,461L280,454L283,448L283,449L284,447L285,448L288,445L287,444L286,442L287,435L284,429L293,420L300,421L300,420L303,419L307,403L312,403L315,405L317,405L323,412L326,412Z"]];
+const NYC_C = {"1":[410.2,314.9],"5":[418.4,308.2],"6":[412.3,292.1],"7":[425.6,308.1],"9":[425.6,300.4],"10":[412.9,281.9],"13":[429.2,292.8],"14":[425.0,282.0],"17":[432.6,283.6],"18":[420.3,269.9],"19":[443.7,266.3],"20":[424.1,261.0],"22":[435.2,259.5],"23":[448.2,254.2],"24":[434.3,249.7],"25":[454.1,248.9],"26":[439.6,238.9],"28":[442.9,244.6],"30":[441.4,230.0],"32":[449.3,230.0],"33":[447.8,217.4],"34":[456.5,202.0],"40":[462.5,243.0],"41":[476.8,240.9],"42":[471.8,223.9],"43":[494.4,234.3],"44":[457.9,222.1],"45":[518.8,217.8],"46":[462.9,209.2],"47":[497.1,182.5],"48":[478.6,212.7],"49":[495.0,210.7],"50":[468.8,183.7],"52":[474.6,200.5],"60":[425.1,404.8],"61":[453.5,397.8],"62":[418.2,390.1],"63":[467.6,385.9],"66":[426.3,367.5],"67":[451.1,356.1],"68":[401.3,370.2],"69":[477.5,362.6],"70":[438.6,363.2],"71":[443.2,344.7],"72":[410.7,349.3],"73":[465.2,340.0],"75":[484.8,349.4],"76":[411.9,334.6],"77":[443.6,336.2],"78":[429.1,338.1],"79":[445.4,324.4],"81":[454.6,329.1],"83":[463.0,323.7],"84":[422.2,318.3],"88":[431.0,317.6],"90":[446.5,309.2],"94":[441.1,298.7],"100":[502.8,396.6],"101":[542.8,387.6],"102":[498.4,317.1],"103":[532.7,315.4],"104":[473.9,309.9],"105":[561.0,297.5],"106":[500.4,348.0],"107":[522.3,298.2],"108":[447.9,288.2],"109":[509.9,258.0],"110":[496.6,281.4],"111":[548.9,272.0],"112":[499.1,304.0],"113":[531.2,363.8],"114":[465.9,264.1],"115":[483.5,267.5],"116":[553.2,355.9],"120":[368.5,365.2],"121":[324.1,373.3],"122":[350.1,420.9],"123":[299.5,434.4]};
+const NYC_BORO = {"Manhattan":[434.3,263.2],"Bronx":[489.3,211.2],"Brooklyn":[445.1,358.1],"Queens":[512.8,312.4],"Staten Island":[330.8,402.8]};
+const R = {}; // rects of controls (for spotlight holes) and cursor targets, recorded while drawing
+
+function seg(g, x, y, items) { // segmented control; items: [label, width, [from, until] | true | null]
+  let cx = x; el('rect', { x, y, width: items.reduce((a, it) => a + it[1], 0), height: 44, rx: 10, fill: 'var(--tone)', stroke: 'var(--line)', 'stroke-width': 2 }, g);
+  return items.map(([label, w, on]) => {
+    el('text', { x: cx + w / 2, y: y + 31, 'text-anchor': 'middle', class: 'strong' }, g, label);
+    if (on) { const a = el('g', on === true ? {} : { class: 'var fade', 'data-step': on[0], ...(on[1] != null ? { 'data-until': on[1] } : {}) }, g);
+      el('rect', { x: cx + 3, y: y + 3, width: w - 6, height: 38, rx: 8, fill: 'var(--ink)' }, a);
+      el('text', { x: cx + w / 2, y: y + 31, 'text-anchor': 'middle', class: 'on-ink' }, a, label); }
+    const r = [cx, y, w, 44]; cx += w; return r; });
+}
+const variant = (g, from, until) => el('g', { class: 'var fade', 'data-step': from, ...(until != null ? { 'data-until': until } : {}) }, g);
+const pad = ([x, y, w, h], p) => [x - p, y - p, w + 2 * p, h + 2 * p];
+
+function buildDash() {
+  const svg = el('svg', { class: 'dash', viewBox: '0 0 1728 860', width: 1728, height: 860, 'aria-label': 'Schematic of the planned dashboard' });
+  // header: year slider, offense select, precinct + cross-filter chip slots
+  const h = el('g', {}, svg);
+  el('text', { x: 0, y: 51, class: 'strong' }, h, 'Year');
+  el('line', { x1: 80, y1: 42, x2: 400, y2: 42, stroke: 'var(--line)', 'stroke-width': 8, 'stroke-linecap': 'round' }, h);
+  el('circle', { cx: 0, cy: 42, r: 14, fill: 'var(--ink)', class: 'vv', 'data-f': 'thumb' }, h);
+  el('text', { x: 420, y: 54, class: 'big' }, variant(h, 0, 0), '2024');
+  el('text', { x: 420, y: 54, class: 'big' }, variant(h, 1), '2010');
+  R.year = [-10, 14, 520, 56]; R.yearAt = [yearX(2010), 42];
+  el('text', { x: 548, y: 51, class: 'strong' }, h, 'Offense');
+  el('rect', { x: 655, y: 20, width: 290, height: 44, rx: 22, fill: 'var(--tone)', stroke: 'var(--line)', 'stroke-width': 2 }, h);
+  el('text', { x: 677, y: 51 }, variant(h, 0, 1), 'All offenses');
+  el('text', { x: 677, y: 51, class: 'strong' }, variant(h, 2), 'Drugs');
+  el('text', { x: 915, y: 50, 'text-anchor': 'middle' }, h, '▾');
+  R.offense = pad([655, 20, 290, 44], 8);
+  el('text', { x: 978, y: 51, class: 'strong' }, h, 'Precinct');
+  el('rect', { x: 1092, y: 20, width: 220, height: 44, rx: 10, fill: 'none', stroke: 'var(--line)', 'stroke-width': 2, 'stroke-dasharray': '6 6' }, h);
+  el('text', { x: 1112, y: 51 }, variant(h, 0, T.precinct - 1), '—');
+  const pc = variant(h, T.precinct); el('rect', { x: 1092, y: 20, width: 220, height: 44, rx: 10, fill: 'var(--tone)', stroke: 'var(--ink)', 'stroke-width': 2 }, pc);
+  el('text', { x: 1110, y: 51, class: 'strong' }, pc, 'Precinct 75 ×');
+  R.pchip = pad([1092, 20, 220, 44], 8);
+  el('text', { x: 1346, y: 51, class: 'strong' }, h, 'Cross-filter');
+  el('rect', { x: 1504, y: 20, width: 210, height: 44, rx: 10, fill: 'none', stroke: 'var(--line)', 'stroke-width': 2, 'stroke-dasharray': '6 6' }, h);
+  el('text', { x: 1524, y: 51 }, variant(h, 0, T.cohort - 1), '—');
+  const xc = variant(h, T.cohort); el('rect', { x: 1504, y: 20, width: 210, height: 44, rx: 10, fill: 'var(--tone)', stroke: 'var(--ink)', 'stroke-width': 2 }, xc);
+  el('text', { x: 1522, y: 51, class: 'strong' }, xc, 'Female ×');
+  R.xchip = pad([1504, 20, 210, 44], 8);
+
+  const panel = (key, title) => { const [x, y, w, hh] = PANEL[key];
+    const g = el('g', { 'data-panel': key }, svg); el('rect', { x, y, width: w, height: hh, rx: 14, class: 'panel' }, g);
+    if (title) el('text', { x: x + 24, y: y + 46, class: 'ptitle' }, g, title); return [g, x, y]; };
+
+  // A · map: real precinct outlines, flat single-hue fills (illustrative values)
+  const [ga, ax, ay] = panel('A', 'A · Map');
+  const [, , donutsSeg] = seg(ga, ax + 218, ay + 16, [['Choropleth', 172, [0, T.donuts - 1]], ['Heat', 86, null], ['Donuts', 118, [T.donuts]]]);
+  R.donuts = pad(donutsSeg, 6); R.donutsAt = [donutsSeg[0] + donutsSeg[2] / 2, donutsSeg[1] + 22];
+  const [, rate] = seg(ga, ax + 608, ay + 16, [['Count', 100, [0, T.rate - 1]], ['Per 10k', 132, [T.rate]]]);
+  R.rate = pad(rate, 6); R.rateAt = [rate[0] + rate[2] / 2, rate[1] + 22];
+  const thin = { fill: 'none', stroke: 'var(--paper)', 'stroke-width': 1.5, 'stroke-linejoin': 'round', 'vector-effect': 'non-scaling-stroke' };
+  NYC.forEach(([, , d], i) => el('path', { d, fill: 'var(--map)', class: 'vv', 'data-f': 'map', 'data-i': i }, ga));
+  el('path', { d: NYC.map(p => p[2]).join(''), ...thin }, ga);
+  const bbox = ds => { const n = ds.join('').match(/-?[\d.]+/g).map(Number), xs = n.filter((_, i) => !(i % 2)), ys = n.filter((_, i) => i % 2);
+    return [Math.min(...xs), Math.min(...ys), Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)]; };
+  const p75 = NYC.find(p => p[0] === 75)[2];
+  el('path', { d: p75, fill: 'none', stroke: 'var(--ink)', 'stroke-width': 3, 'stroke-linejoin': 'round', 'vector-effect': 'non-scaling-stroke' }, variant(ga, T.precinct));
+  R.p75 = pad(bbox([p75]), 10); R.p75At = NYC_C[75];
+  // donut clusters (layer 'Donuts'): centre = volume, ring = severity mix; Brooklyn splits into precincts when zoomed
+  const donut = (g, [x, y], r, mix, label, fs) => { const C = 2 * Math.PI * r; let off = 0;
+    mix.forEach((m, i) => { el('circle', { cx: x, cy: y, r, fill: 'none', stroke: ['var(--orange)', 'var(--violet)', 'var(--aqua)'][i], 'stroke-width': r * 0.42,
+      'stroke-dasharray': `${m * C} ${C}`, 'stroke-dashoffset': -off, transform: `rotate(-90 ${x} ${y})` }, g); off += m * C; });
+    el('circle', { cx: x, cy: y, r: r * 0.79, fill: 'var(--paper)' }, g);
+    el('text', { x, y: y + fs * 0.36, 'text-anchor': 'middle', class: 'dnum', style: `font-size:${fs}px` }, g, label); };
+  const CL = [['Manhattan', [0.45, 0.47, 0.08], '9k'], ['Bronx', [0.4, 0.5, 0.1], '7k'], ['Queens', [0.38, 0.52, 0.1], '8k']];
+  [variant(ga, T.donuts, T.czoom - 1), variant(ga, T.czoom + 1)].forEach(g => CL.forEach(([b, mix, n]) => donut(g, NYC_BORO[b], 23, mix, n, 22)));
+  const bk = NYC_BORO.Brooklyn, bkMix = [0.36, 0.55, 0.09];
+  donut(variant(ga, T.donuts, T.czoom - 1), bk, 23, bkMix, '11k', 22);
+  donut(variant(ga, T.czoom + 1), bk, 23, bkMix, '11k', 22);
+  const split = variant(ga, T.czoom, T.czoom);
+  [[84, '1.4k'], [90, '1.1k'], [68, '0.6k'], [61, '0.8k'], [67, '1.9k'], [75, '2.3k']].forEach(([p, n], i) =>
+    donut(split, NYC_C[p], 8, [0.3 + 0.1 * rnd(i, 1), 0.55, 0.1], n, 5.5));
+  R.bk = pad([bk[0] - 23, bk[1] - 23, 46, 46], 8); R.bkAt = bk;
+  R.bkZoom = pad(bbox(NYC.filter(p => p[1] === 'K').map(p => p[2])), 36);
+  const lg = el('linearGradient', { id: 'mapramp' }, el('defs', {}, ga));
+  el('stop', { offset: 0, 'stop-color': 'var(--map)', 'stop-opacity': 0.12 }, lg); el('stop', { offset: 1, 'stop-color': 'var(--map)' }, lg);
+  el('rect', { x: ax + 24, y: ay + 330, width: 120, height: 16, rx: 4, fill: 'url(#mapramp)' }, ga);
+
+  // B · precinct detail: sorted bars, a trend line, a severity-mix bar
+  const pts = p => p.map(q => q.join(',')).join(' ');
+  const [gb, bx, by] = panel('B');
+  el('text', { x: bx + 24, y: by + 46, class: 'ptitle' }, variant(gb, 0, 2), 'B · New York City');
+  el('text', { x: bx + 24, y: by + 46, class: 'ptitle' }, variant(gb, 3), 'B · Precinct 75');
+  for (let j = 0; j < 6; j++) {
+    const y = by + 82 + j * 46;
+    el('rect', { x: bx + 24, y: y + 9, width: 96 - j * 6, height: 12, rx: 6, fill: 'var(--line)' }, gb);
+    el('rect', { x: bx + 136, y, width: 320, height: 30, rx: 5, fill: j ? '#A3ABB9' : 'var(--ink)', class: 'vv bar', 'data-f': 'bar', 'data-i': j }, gb);
+  }
+  el('text', { x: bx + 500, y: by + 100, class: 'strong' }, gb, 'Over time');
+  el('line', { x1: bx + 500, y1: by + 232, x2: bx + 832, y2: by + 232, stroke: 'var(--line)', 'stroke-width': 2 }, gb);
+  const trend = s => Array.from({ length: 20 }, (_, t) => {
+    const v = 0.85 - 0.6 / (1 + Math.exp(-(t - 10) * 0.6)) + 0.1 * Math.sin(t * 0.9 + s) + 0.12 * (rnd(t, s + 11) - 0.5) + (t > 15 ? 0.06 * (t - 15) : 0);
+    return [bx + 500 + 332 * t / 19, by + 230 - 110 * clamp(v, 0.05, 1)]; });
+  [[0, 1], [2, 2], [3, 3], [4]].forEach(([f, u], s) => el('polyline', { points: pts(trend(s)), fill: 'none', stroke: 'var(--ink)', 'stroke-width': 4, 'stroke-linejoin': 'round' }, variant(gb, f, u)));
+  el('line', { x1: 0, y1: by + 112, x2: 0, y2: by + 232, stroke: 'var(--soft)', 'stroke-width': 2, 'stroke-dasharray': '6 5', class: 'vv', 'data-f': 'rule' }, gb);
+  el('text', { x: bx + 500, y: by + 282, class: 'strong' }, gb, 'Severity mix');
+  [[[0, 1], [0.42, 0.5, 0.08]], [[2, 2], [0.3, 0.7, 0]], [[3], [0.22, 0.78, 0]]].forEach(([[f, u], mix]) => {
+    const g = variant(gb, f, u); let x = bx + 500;
+    mix.forEach((m, i) => { if (m) el('rect', { x, y: by + 300, width: 332 * m - 3, height: 34, rx: 4, fill: ['var(--orange)', 'var(--violet)', 'var(--aqua)'][i] }, g); x += 332 * m; }); });
+
+  // C · waffles: three 10×10 grids, two cohorts
+  const [gc, cx0, cy0] = panel('C', 'C · Waffles');
+  [['Male', 'var(--male)', 450], ['Female', 'var(--female)', 566], ['Unknown', 'var(--dsoft)', 706]].forEach(([t, c, x]) => {
+    el('circle', { cx: cx0 + x, cy: cy0 + 37, r: 10, fill: c }, gc); el('text', { x: cx0 + x + 18, y: cy0 + 46 }, gc, t); });
+  ['Felony', 'Misdemeanor', 'Violation'].forEach((t, w) => {
+    const gx = cx0 + 40 + w * 280, gy = cy0 + 112;
+    el('text', { x: gx, y: cy0 + 100, class: 'strong' }, gc, t);
+    for (let j = 0; j < 100; j++) {
+      const px = gx + 11 + (j % 10) * 22, py = gy + 11 + Math.floor(j / 10) * 22;
+      el('circle', { cx: px, cy: py, r: 8.5, fill: 'var(--male)', class: 'vv', 'data-f': 'male' }, gc);
+      el('circle', { cx: px, cy: py, r: 8.5, fill: 'var(--female)', class: 'vv', 'data-f': 'fem', 'data-w': w, 'data-j': j }, gc);
+      if (j === 99) el('circle', { cx: px, cy: py, r: 8.5, fill: 'var(--dsoft)' }, gc);
+    }
+    if (w === 1) { const rows = Math.ceil(FEM[3][1] / 10), y0 = gy + (10 - rows) * 22;
+      el('rect', { x: gx - 4, y: y0 - 4, width: 228, height: rows * 22 + 8, rx: 8, fill: 'none', stroke: 'var(--ink)', 'stroke-width': 4 }, variant(gc, 4));
+      R.female = pad([gx, y0, 220, rows * 22], 10); R.femaleAt = [gx + 11 + 8 * 22, gy + 11 + 9 * 22];
+      R.wafG = [gx, gy]; }
+  });
+  { // focus: zoomed single waffle with its legend card (shares are the sheet's own sketch numbers); drawn last = on top
+      const [gx, gy] = R.wafG, card = variant(gc, T.wzoom, T.wzoom), kx = gx + 240, ky = gy;
+      el('rect', { x: kx, y: ky, width: 260, height: 196, rx: 12, fill: 'var(--paper)', stroke: 'var(--line)', 'stroke-width': 2 }, card);
+      el('text', { x: kx + 20, y: ky + 40, class: 'strong' }, card, '1 figure = 1%');
+      [['Male ≈ 85%', 'var(--male)'], ['Female ≈ 14%', 'var(--female)'], ['Unknown ≈ 1%', 'var(--dsoft)']].forEach(([t, c], i) => {
+        el('circle', { cx: kx + 30, cy: ky + 82 + i * 40, r: 10, fill: c }, card); el('text', { x: kx + 50, y: ky + 91 + i * 40 }, card, t); });
+      R.waf = pad([gx, gy, 220, 220], 8); R.wafAt = [gx + 110, gy + 110]; R.wafZoom = [gx - 24, gy - 44, 524, 280];
+  }
+
+  // D · calendar: weekday × month
+  const [gd, dx, dy] = panel('D', 'D · Calendar');
+  const [, pct] = seg(gd, dx + 716, dy + 16, [['Abs', 74, [0, T.pct - 1]], ['%', 50, [T.pct]]]);
+  R.pct = pad(pct, 6); R.pctAt = [pct[0] + pct[2] / 2, pct[1] + 22];
+  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'], DAY = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  MON.forEach((m, i) => el('text', { x: dx + 120 + i * 61 + 28, y: dy + 98, 'text-anchor': 'middle' }, gd, m));
+  DAY.forEach((d, r) => {
+    el('text', { x: dx + 24, y: dy + 112 + r * 36 + 25 }, gd, d);
+    MON.forEach((_, m) => { const x = dx + 120 + m * 61, y = dy + 112 + r * 36;
+      el('rect', { x, y, width: 57, height: 32, rx: 4, fill: 'var(--tone)' }, gd);
+      el('rect', { x, y, width: 57, height: 32, rx: 4, fill: 'var(--cal)', class: 'vv', 'data-f': 'calr', 'data-d': r, 'data-m': m }, gd);
+      el('rect', { x, y, width: 57, height: 32, rx: 4, fill: 'var(--cal-neg)', class: 'vv', 'data-f': 'calb', 'data-d': r, 'data-m': m }, gd); });
+  });
+  const cx = dx + 120 + 2 * 61, cy = dy + 112 + 2 * 36; // Wed · Mar
+  el('rect', { x: cx - 3, y: cy - 3, width: 63, height: 38, rx: 6, fill: 'none', stroke: 'var(--ink)', 'stroke-width': 4 }, variant(gd, T.tip));
+  const tip = variant(gd, T.tip), tx = cx + 44, ty = cy - 112;
+  el('rect', { x: tx, y: ty, width: 250, height: 92, rx: 10, fill: 'var(--paper)', stroke: 'var(--ink)', 'stroke-width': 2 }, tip);
+  el('text', { x: tx + 18, y: ty + 38, class: 'strong' }, tip, 'Wed · Mar');
+  el('text', { x: tx + 18, y: ty + 74 }, tip, 'value vs mean');
+  R.cell = pad([cx, cy, 57, 32], 8); R.cellTip = [cx - 10, ty - 10, tx + 250 + 10 - (cx - 10), cy + 32 + 10 - (ty - 10)]; R.cellAt = [cx + 28, cy + 16];
+  return svg;
+}
+
+function setDash(root, k) { // continuous values for step k (opacity / transform only)
+  const year = k >= 1 ? 2010 : 2024, ms = MAP_S[k], bs = BAR_S[k], ws = WAF_S[k], cs = CAL_S[k], pctMode = k >= T.pct;
+  const calRow = d => [...Array(12)].reduce((a, _, m) => a + calVal(d, m, cs), 0) / 12;
+  root.querySelectorAll('.vv').forEach(e => { const f = e.dataset.f;
+    if (f === 'thumb') e.style.transform = `translateX(${yearX(year)}px)`;
+    else if (f === 'rule') e.style.transform = `translateX(${ruleX(year)}px)`;
+    else if (f === 'map') e.style.opacity = mapVal(+e.dataset.i, ms) * (k >= T.donuts ? 0.25 : 1); // donut layer: fills fade back
+    else if (f === 'bar') e.style.transform = `scaleX(${barVal(+e.dataset.i, bs)})`;
+    else if (f === 'male') e.style.opacity = k >= T.cohort && k !== T.wzoom ? 0.3 : 1;
+    else if (f === 'fem') e.style.opacity = +e.dataset.j >= 100 - FEM[ws][+e.dataset.w] ? 1 : 0;
+    else { const d = +e.dataset.d, v = calVal(d, +e.dataset.m, cs), dev = clamp((v - calRow(d)) * 4, -1, 1);
+      e.style.opacity = f === 'calr' ? (pctMode ? Math.max(0, dev) : v) : (pctMode ? Math.max(0, -dev) : 0); } });
+}
+
+const dash = buildDash();
+setDash(dash, 0);
+// bridge: one panel of the step-0 schematic per cell (viewBox crop), titles replaced by the cell labels
+document.querySelectorAll('.schem').forEach(c => {
+  const s = dash.cloneNode(true), p = PANEL[c.dataset.panel];
+  s.querySelectorAll('[data-step]:not([data-step="0"]), .ptitle').forEach(e => e.remove());
+  s.querySelectorAll('[data-step]').forEach(e => { e.removeAttribute('data-step'); e.removeAttribute('data-until'); });
+  s.querySelectorAll('[id]').forEach(e => e.id += '-' + c.dataset.panel);
+  s.querySelectorAll('[fill^="url(#"]').forEach(e => e.setAttribute('fill', `url(#mapramp-${c.dataset.panel})`));
+  s.setAttribute('viewBox', p.join(' ')); s.removeAttribute('width'); s.removeAttribute('height');
+  c.append(s);
+});
+const box = document.querySelector('.dashbox'), dcam = box.querySelector('.dcam');
+dcam.prepend(dash);
+
+// interactivity: cursor targets (step 0 = resting spot) and spotlight holes [phase-1 control, phase-2 views that changed]
+const { A, B, C, D } = PANEL;
+const CUR = [[110, 300], R.yearAt, [800, 42], R.p75At, R.femaleAt, R.wafAt, R.rateAt, R.donutsAt, R.bkAt, R.pctAt, R.cellAt];
+const HOVER = T.tip; // tooltip step: hover only, no press
+const HOLES = [null,
+  [R.year, [A, B, C, D, R.year]], [R.offense, [A, B, C, D, R.offense]], [R.p75, [B, C, D, R.pchip, R.p75]],
+  [R.female, [A, B, D, R.xchip, R.female]], [R.waf, []], [R.rate, [A]], [R.donuts, [A]], [R.bk, []], [R.pct, [D]], [R.cell, [R.cellTip]]];
+const ZOOM = { [T.wzoom]: R.wafZoom, [T.czoom]: R.bkZoom }; // focus steps: the schematic's camera frames this rect
+const zoomT = r => { if (!r) return 'translate(0px, 0px) scale(1)';
+  const [x, y, w, h] = r, s = Math.min(1728 / w, 860 / h) * 0.92;
+  return `translate(${864 - (x + w / 2) * s}px, ${430 - (y + h / 2) * s}px) scale(${s})`; };
+CUR.forEach(([x, y], i) => { if (!i || i === HOVER) return; // one ripple per pressed control
+  const d = Object.assign(document.createElement('div'), { className: 'fx ripple' });
+  Object.assign(d.dataset, { step: i, until: i });
+  Object.assign(d.style, { left: x + 'px', top: y + 'px' });
+  box.insertBefore(d, box.querySelector('.cursor')); });
+const mask = document.getElementById('spot');
+HOLES.forEach((h, i) => { if (!h) return;
+  [[h[0], 'h1 fade'], ...h[1].map(r => [r, 'h2 fade'])].forEach(([[x, y, w, hh], cls]) =>
+    el('rect', { x, y, width: w, height: hh, rx: 14, fill: '#000', class: cls, 'data-step': i, 'data-until': i }, mask)); });
 
 // one highlight box per camera stop, riding inside the camera (only opacity animates)
 const camIn = document.querySelector('.cam-in');
@@ -461,64 +701,36 @@ CAM.forEach((r, i) => { if (!r) return;
   Object.assign(d.dataset, { step: i, until: i });
   Object.assign(d.style, { left: r[0] + 'px', top: r[1] + 'px', width: r[2] + 'px', height: r[3] + 'px' });
   camIn.append(d); });
-// one ripple per pressed control
-const shotbox = document.querySelector('.shotbox');
-CUR.forEach(([x, y], i) => { if (!i || i === HOVER) return;
-  const d = Object.assign(document.createElement('div'), { className: 'fx ripple' });
-  Object.assign(d.dataset, { step: i, until: i });
-  Object.assign(d.style, { left: x + 'px', top: y + 'px' });
-  shotbox.insertBefore(d, shotbox.querySelector('.cursor')); });
-// spotlight holes per step, in capture px: [phase-1 control], [phase-2 views that changed]
-const A = [16,78,938,460], B = [966,78,938,460], C = [16,550,938,460], D = [966,550,938,460];
-const YEAR = [446,12,368,42], OFFENSE = [872,12,276,40], P75 = [516,330,82,90], P_CHIP = [1212,12,188,40],
-  FEMALE = [336,856,298,68], XF_CHIP = [1494,12,124,40], RATE = [812,86,134,34], PCT = [1650,560,92,30],
-  CELL = [1164,706,70,50], CELL_TIP = [1160,616,286,144];
-const HOLES = [null,
-  [YEAR, [A, B, C, D, YEAR]], [OFFENSE, [A, B, C, D, OFFENSE]], [P75, [B, C, D, P_CHIP, P75]],
-  [FEMALE, [A, B, D, XF_CHIP, FEMALE]], [RATE, [A]], [PCT, [D]], [CELL, [CELL_TIP]]];
-const mask = document.getElementById('spot');
-HOLES.forEach((h, i) => { if (!h) return;
-  [[h[0], 'h1 fade'], ...h[1].map(r => [r, 'h2 fade'])].forEach(([[x, y, w, hh], cls]) => {
-    const r = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-    Object.entries({ x, y, width: w, height: hh, rx: 14, fill: '#000', class: cls, 'data-step': i, 'data-until': i }).forEach(([k, v]) => r.setAttribute(k, v));
-    mask.append(r); }); });
-// crops: fit rect [x,y,w,h] of an image into its cell (contain for the sketch, the app panels match the cell)
+// sketch crops: fit rect [x,y,w,h] of sheet.jpg (955×1280) into its cell
 document.querySelectorAll('.crop').forEach(c => {
-  const [src, W, H] = IMG[c.dataset.img], [x, y, w, h] = c.dataset.r.split(',').map(Number);
+  const [x, y, w, h] = c.dataset.r.split(',').map(Number);
   const cw = c.parentElement.clientWidth, ch = c.parentElement.clientHeight, k = Math.min(cw / w, ch / h);
-  Object.assign(c.style, { backgroundImage: `url(${src})`, backgroundSize: `${W * k}px ${H * k}px`,
+  Object.assign(c.style, { backgroundImage: 'url(img/sheet.jpg)', backgroundSize: `${955 * k}px ${1280 * k}px`,
     backgroundPosition: `${(cw - w * k) / 2 - x * k}px ${(ch - h * k) / 2 - y * k}px` });
 });
 
 function camera(r) {
   const view = camIn.parentElement;
-  const [x, y, w, h, cy = y + h / 2] = r || [0, 0, 955, 1280];
-  const s = Math.min(Math.min(view.clientWidth / w, view.clientHeight / h) * (r ? 0.86 : 0.94), 2.3);
-  camIn.style.transform = `translate(${view.clientWidth / 2 - (x + w / 2) * s}px,${view.clientHeight / 2 - cy * s}px) scale(${s})`;
+  const [x, y, w, h, o = {}] = r || [0, 0, 955, 1280];
+  const s = o.s || Math.min(Math.min(view.clientWidth / w, view.clientHeight / h) * (r ? 0.86 : 0.94), 2.3);
+  const cx = o.cx ?? x + w / 2, cy = o.cy ?? y + h / 2;
+  camIn.style.transform = `translate(${view.clientWidth / 2 - cx * s}px,${view.clientHeight / 2 - cy * s}px) scale(${s})`;
   camIn.style.setProperty('--cs', s);
-}
-
-function demo(on) {
-  const f = document.querySelector('#demo iframe');
-  if (on && !f.getAttribute('src')) {
-    f.onload = () => { try { f.contentWindow.addEventListener('keydown', e => {
-      if (e.key === 'PageDown' || e.key === 'PageUp') { e.preventDefault(); go(e.key === 'PageDown' ? 1 : -1); } }); } catch (_) {} };
-    f.src = '../index.html';
-  } else if (!on && f.getAttribute('src')) { const g = f.cloneNode(); g.removeAttribute('src'); f.replaceWith(g); } // drop the running app
 }
 
 function apply() {
   secs.forEach((s, i) => s.classList.toggle('cur', i === cur));
   const s = secs[cur];
-  s.classList.toggle('fwd', fwd); // press/ripple/delayed cross-fade play only when stepping forward
+  s.classList.toggle('fwd', fwd); // press/ripple/delayed state change play only when stepping forward
   s.querySelectorAll('[data-step]').forEach(e => e.classList.toggle('on',
     step >= +e.dataset.step && (e.dataset.until == null || step <= +e.dataset.until)));
   if (s.id === 'sheet') camera(CAM[step]);
   if (s.id === 'live') {
+    setDash(dash, step);
+    s.toggleAttribute('data-zoom', !!ZOOM[step]); dcam.style.transform = zoomT(ZOOM[step]);
     s.style.setProperty('--cx', CUR[step][0]); s.style.setProperty('--cy', CUR[step][1]);
     s.toggleAttribute('data-odd', step % 2 === 1); s.toggleAttribute('data-hover', step === HOVER);
   }
-  demo(s.id === 'demo');
   history.replaceState(null, '', `#${cur + 1}.${step}`);
   const done = steps.slice(0, cur).reduce((a, n) => a + n + 1, 0) + step + 1;
   document.getElementById('bar').style.transform = `scaleX(${done / total})`;
