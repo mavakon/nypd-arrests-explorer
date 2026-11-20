@@ -430,14 +430,14 @@ body.notes #ui { bottom: calc(10px + var(--nh, 0px)); }
     <i class="arrow" data-step="1" style="--delay:calc(2 * var(--chain))"></i>
     <div class="node" data-step="1" style="--delay:calc(3 * var(--chain))"><p class="tag">Output</p><h3>Static JSON</h3><p>Count cube, calendar, demographics, per-precinct and cross-filter files, precinct GeoJSON</p></div>
     <i class="arrow" data-step="2"></i>
-    <div class="node" data-step="2" style="--delay:var(--chain)"><p class="tag">Browser</p><h3>D3 + Leaflet</h3><p>No server: static hosting, e.g. GitHub Pages</p></div>
+    <div class="node" data-step="2" style="--delay:var(--chain)"><p class="tag">Browser</p><h3>D3 + Leaflet / Dash</h3><p>Static site with no server, or the sheet’s Python Dash + Plotly app</p></div>
   </div>
   <div class="notes2">
     <div class="item" data-step="2" style="--delay:calc(2 * var(--chain))"><p><b>Checks we plan:</b> every aggregate must reconcile with the API total; rows without usable coordinates will be missing only from the heat layer.</p></div>
-    <div class="item" data-step="2" style="--delay:calc(2 * var(--chain) + var(--stag-piece))"><p><b>Change from the sheet:</b> instead of Python + Dash + Plotly we plan a static D3 + Leaflet site — no server to host or keep running.</p></div>
+    <div class="item" data-step="2" style="--delay:calc(2 * var(--chain) + var(--stag-piece))"><p><b>Two options:</b> Python + Dash + Plotly + Leaflet as on the sheet, or a static D3 + Leaflet site — no server to host or keep running.</p></div>
     <div class="item" data-step="2" style="--delay:calc(2 * var(--chain) + 2 * var(--stag-piece))"><p><b>Risk:</b> ~6.3M rows — so all aggregation happens before the browser; the client only looks values up.</p></div>
   </div>
-  <aside>How we will build it. The source is the NYC Open Data API, about 6.3 million rows. [→] A Python prep script will aggregate on the server with SoQL, so we never download the raw rows; it caches responses and reconciles totals; the output is static JSON. [→] The browser does the rest with D3 and Leaflet — no server, static hosting. One change from the sheet: instead of Dash we plan a static site. The main risk is data size, so all aggregation happens before the browser.</aside>
+  <aside>How we will build it. The source is the NYC Open Data API, about 6.3 million rows. [→] A Python prep script will aggregate on the server with SoQL, so we never download the raw rows; it caches responses and reconciles totals; the output is static JSON. [→] The front end is either Dash with Plotly and Leaflet, as on the sheet, or a static D3 and Leaflet site with no server to host. The main risk is data size, so all aggregation happens before the browser.</aside>
 </section>
 
 <!-- 7 · closing -->
