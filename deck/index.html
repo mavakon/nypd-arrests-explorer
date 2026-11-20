@@ -20,18 +20,18 @@
   --d-exit: 220ms;    /* things leaving (~25% shorter) */
   --d-move: 450ms;    /* camera, cursor travel */
   --d-xfade: 400ms;   /* screenshot / sketch cross-fade */
-  --d-pulse: 500ms;   /* outline pulse on changed views */
+  --dim: 0.5;         /* spotlight scrim: ink at 50% */
   --stag: 40ms;       /* stagger between identical siblings */
   --stag-piece: 90ms; /* stagger between distinct pieces */
   --chain: 300ms;     /* gap between chained pieces on the build slide */
   /* interaction storyboard (forward step):
        0ms            cursor travels to the control         (--d-move, ease-in-out)
        --t-press      cursor dips to 0.96 + ripple ring     (--d-press / --d-xfade)
+       0ms → --t-swap spotlight hole on the control being used
        --t-swap       screenshot cross-fades to new state   (--d-xfade, ease-out)
-       --t-pulse      outline pulses on views that changed  (--d-pulse) */
+                      and the hole cross-fades to the views that changed (rest state) */
   --t-press: var(--d-move);
   --t-swap: calc(var(--d-move) + var(--d-press));
-  --t-pulse: calc(var(--t-swap) + var(--d-xfade));
 }
 * { box-sizing: border-box; margin: 0; }
 html, body { height: 100%; overflow: hidden; background: var(--ink); }
@@ -154,9 +154,15 @@ section.live { padding: 0; gap: 0; background: var(--tone); }
 .ripple { width: 56px; height: 56px; margin: -28px 0 0 -28px; border: 4px solid var(--orange); border-radius: 50%; }
 .fwd .ripple.on { animation: ripple var(--d-xfade) var(--ease-out) var(--t-press) both; }
 @keyframes ripple { from { opacity: .9; transform: scale(0.95); } to { opacity: 0; transform: scale(1.8); } }
-.pulse { border: 5px solid var(--orange); border-radius: 14px; }
-.fwd .pulse.on { animation: pulse var(--d-pulse) var(--ease-out) var(--t-pulse) both; }
-@keyframes pulse { 40% { opacity: 1; } }
+.scrim { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.scrim > rect { fill: var(--ink); fill-opacity: var(--dim); }
+/* holes live in the SVG mask: phase 1 = control, shown only during a forward press, never at rest */
+.h1 { opacity: 0; transition: none; }
+.fwd .h1.on { animation: hole-out var(--d-xfade) var(--ease-in) var(--t-swap) both; }
+@keyframes hole-out { from { opacity: 1; } to { opacity: 0; } }
+/* phase 2 = views that changed: the rest state, cross-fades with the frame */
+.h2 { transition-duration: var(--d-xfade); }
+.fwd .h2 { --delay: var(--t-swap); }
 .capstrip { flex: 1; display: flex; align-items: center; justify-content: space-between; padding: 0 134px; margin-top: -151px; }
 .capstrip .stack { flex: 1; }
 .capt { display: flex; flex-direction: column; gap: 6px; }
@@ -367,13 +373,10 @@ body.notes #ui { bottom: calc(10px + var(--nh, 0px)); }
     <img class="frame fade" data-step="5" src="img/s5.jpg" alt="Map in arrests per 10k residents">
     <img class="frame fade" data-step="6" src="img/s6.jpg" alt="Calendar in % deviation from the mean">
     <img class="frame fade" data-step="7" src="img/s7.jpg" alt="Tooltip on a calendar cell">
-    <!-- outline pulses on the views that react (B, C, D after the precinct click; A, B, D after the cohort click) -->
-    <div class="fx pulse" data-step="3" data-until="3" style="left:966px;top:78px;width:938px;height:460px"></div>
-    <div class="fx pulse" data-step="3" data-until="3" style="left:16px;top:550px;width:938px;height:460px"></div>
-    <div class="fx pulse" data-step="3" data-until="3" style="left:966px;top:550px;width:938px;height:460px"></div>
-    <div class="fx pulse" data-step="4" data-until="4" style="left:16px;top:78px;width:938px;height:460px"></div>
-    <div class="fx pulse" data-step="4" data-until="4" style="left:966px;top:78px;width:938px;height:460px"></div>
-    <div class="fx pulse" data-step="4" data-until="4" style="left:966px;top:550px;width:938px;height:460px"></div>
+    <svg class="scrim fade" data-step="1" viewBox="0 0 1920 1080" aria-hidden="true">
+      <mask id="spot" maskUnits="userSpaceOnUse" x="0" y="0" width="1920" height="1080"><rect width="1920" height="1080" fill="#fff"/></mask>
+      <rect width="1920" height="1080" mask="url(#spot)"/>
+    </svg>
     <div class="cursor"><svg class="cin" viewBox="0 0 20 28" aria-hidden="true"><path d="M2 2 L2 23 L7.5 18 L11 26 L14.5 24.5 L11 16.8 L18 16.8 Z" fill="#14213D" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg></div>
   </div>
   <div class="capstrip">
@@ -465,6 +468,20 @@ CUR.forEach(([x, y], i) => { if (!i || i === HOVER) return;
   Object.assign(d.dataset, { step: i, until: i });
   Object.assign(d.style, { left: x + 'px', top: y + 'px' });
   shotbox.insertBefore(d, shotbox.querySelector('.cursor')); });
+// spotlight holes per step, in capture px: [phase-1 control], [phase-2 views that changed]
+const A = [16,78,938,460], B = [966,78,938,460], C = [16,550,938,460], D = [966,550,938,460];
+const YEAR = [446,12,368,42], OFFENSE = [872,12,276,40], P75 = [516,330,82,90], P_CHIP = [1212,12,188,40],
+  FEMALE = [336,856,298,68], XF_CHIP = [1494,12,124,40], RATE = [812,86,134,34], PCT = [1650,560,92,30],
+  CELL = [1164,706,70,50], CELL_TIP = [1160,616,286,144];
+const HOLES = [null,
+  [YEAR, [A, B, C, D, YEAR]], [OFFENSE, [A, B, C, D, OFFENSE]], [P75, [B, C, D, P_CHIP, P75]],
+  [FEMALE, [A, B, D, XF_CHIP, FEMALE]], [RATE, [A]], [PCT, [D]], [CELL, [CELL_TIP]]];
+const mask = document.getElementById('spot');
+HOLES.forEach((h, i) => { if (!h) return;
+  [[h[0], 'h1 fade'], ...h[1].map(r => [r, 'h2 fade'])].forEach(([[x, y, w, hh], cls]) => {
+    const r = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    Object.entries({ x, y, width: w, height: hh, rx: 14, fill: '#000', class: cls, 'data-step': i, 'data-until': i }).forEach(([k, v]) => r.setAttribute(k, v));
+    mask.append(r); }); });
 // crops: fit rect [x,y,w,h] of an image into its cell (contain for the sketch, the app panels match the cell)
 document.querySelectorAll('.crop').forEach(c => {
   const [src, W, H] = IMG[c.dataset.img], [x, y, w, h] = c.dataset.r.split(',').map(Number);
